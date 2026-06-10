@@ -23,7 +23,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
     agent = get_agent(user_id)
-    response = agent.run(user_input)
+    try:
+        response = agent.run(user_input)
+    except Exception as e:
+        response = "抱歉，出错了，请再试一次。"
+        print(f"  [错误] {e}")
 
     await update.message.reply_text(response)
 
