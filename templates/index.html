@@ -4,20 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Agent</title>
+    <meta name="description" content="My Agent Chat">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>My Agent</h1>
-            <button id="clear-btn" onclick="clearHistory()">清空对话</button>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <button id="clear-btn" onclick="clearHistory()">Clear</button>
+                <a href="/settings" class="nav-link" style="padding:6px 12px;border:1px solid #ddd;border-radius:8px;">⚙️ Settings</a>
+            </div>
         </div>
 
         <div class="messages" id="messages"></div>
 
         <div class="input-area">
-            <input type="text" id="input" placeholder="输入消息..." autocomplete="off" />
-            <button onclick="sendMessage()">发送</button>
+            <input type="text" id="input" placeholder="Type a message..." autocomplete="off" />
+            <button onclick="sendMessage()">Send</button>
         </div>
     </div>
 
@@ -45,7 +49,7 @@
 
             const thinking = document.createElement("div");
             thinking.className = "message agent thinking";
-            thinking.innerText = "思考中...";
+            thinking.innerText = "Thinking...";
             messages.appendChild(thinking);
             messages.scrollTop = messages.scrollHeight;
 
@@ -57,17 +61,17 @@
                 });
                 const data = await res.json();
                 thinking.remove();
-                addMessage("agent", data.reply || "（无回复）");
+                addMessage("agent", data.reply || "(no reply)");
             } catch (e) {
                 thinking.remove();
-                addMessage("agent", "请求失败，请重试");
+                addMessage("agent", "Request failed, please try again.");
             }
         }
 
         async function clearHistory() {
             await fetch("/clear", {method: "POST"});
             messages.innerHTML = "";
-            addMessage("agent", "对话已清空");
+            addMessage("agent", "Conversation cleared.");
         }
     </script>
 </body>

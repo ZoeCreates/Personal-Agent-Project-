@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - My Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Settings</h1>
+            <a href="/" class="nav-link">← Back to Chat</a>
+        </div>
+
+        <div class="settings-body">
+
+            <div class="section">
+                <h2>GitHub</h2>
+                <div class="field">
+                    <label>Username</label>
+                    <div class="field-row">
+                        <input type="text" id="github-username" placeholder="e.g. ZoeCreates" />
+                        <button onclick="saveSettings()">Save</button>
+                    </div>
+                    <p class="hint" id="save-status"></p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Connected Tools</h2>
+                <div class="subsection">
+                    <h3>Built-in</h3>
+                    <ul id="builtin-tools" class="tool-list"></ul>
+                </div>
+                <div class="subsection">
+                    <h3>MCP</h3>
+                    <ul id="mcp-tools" class="tool-list"></ul>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Conversation</h2>
+                <button class="danger-btn" onclick="clearHistory()">Clear History</button>
+                <p class="hint" id="clear-status"></p>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        async function loadTools() {
+            const res = await fetch("/api/tools");
+            const data = await res.json();
+
+            const builtinList = document.getElementById("builtin-tools");
+            data.builtin.forEach(name => {
+                const li = document.createElement("li");
+                li.innerText = name;
+                builtinList.appendChild(li);
+            });
+
+            const mcpList = document.getElementById("mcp-tools");
+            data.mcp.forEach(name => {
+                const li = document.createElement("li");
+                li.innerText = name;
+                mcpList.appendChild(li);
+            });
+        }
+
+        async function saveSettings() {
+            const username = document.getElementById("github-username").value.trim();
+            if (!username) return;
+            const res = await fetch("/api/settings", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({github_username: username})
+            });
+            const data = await res.json();
+            const status = document.getElementById("save-status");
+            if (data.status === "ok") {
+                status.innerText = "✓ Saved";
+                status.style.color = "green";
+            } else {
+                status.innerText = "Failed to save";
+                status.style.color = "red";
+            }
+        }
+
+        async function clearHistory() {
+            await fetch("/clear", {method: "POST"});
+            const status = document.getElementById("clear-status");
+            status.innerText = "✓ Cleared";
+            status.style.color = "green";
+        }
+
+        loadTools();
+    </script>
+</body>
+</html>
