@@ -37,6 +37,16 @@ def search(query: str) -> str:
         return f"搜索失败: {e}"
 
 @register_tool
+def get_weather(city: str) -> str:
+    """获取城市当前天气"""
+    try:
+        import requests
+        res = requests.get(f"https://wttr.in/{city}?format=3", timeout=5)
+        return res.text.strip()
+    except Exception as e:
+        return f"获取天气失败: {e}"
+
+@register_tool
 def get_stock_price(symbol: str) -> str:
     """获取股票实时价格"""
     try:
@@ -52,6 +62,60 @@ def get_current_time() -> str:
     """获取当前时间"""
     from datetime import datetime
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+@register_tool
+def get_notion_todos(status: str = "not_started") -> str:
+    """查询 Notion 待办事项。status 可以是 'not_started'(未开始), 'in_progress'(进行中), 'done'(已完成), 'all'(全部)"""
+    import requests, os
+    from datetime import date
+
+    token = os.getenv("NOTION_TOKEN")
+    database_id = "3edf3271-4d3e-839c-a3db-8150e4e472c3"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json"
+    }
+
+    status_map = {
+        "not_started": "Not started",
+        "in_progress": "In progress",
+        "done": "Done"
+    }
+
+    body = {"page_size": 20}
+    if status != "all" and status in status_map:
+        body["filter"] = {
+            "property": "Status",
+            "status": {"equals": status_map[status]}
+        }
+
+    res = requests.post(
+        f"https://api.notion.com/v1/databases/{database_id}/query",
+        headers=headers,
+        json=body
+    )
+    if res.status_code != 200:
+        return f"查询失败: {res.text}"
+
+    results = res.json().get("results", [])
+    if not results:
+        return "没有找到符合条件的待办事项"
+
+    today = str(date.today())
+    lines = []
+    for page in results:
+        props = page.get("properties", {})
+        name_list = props.get("Name", {}).get("title", [])
+        name = name_list[0]["plain_text"] if name_list else "(无标题)"
+        status_obj = props.get("Status", {}).get("status", {})
+        status_name = status_obj.get("name", "") if status_obj else ""
+        due = props.get("Due date", {}).get("date")
+        due_str = due["start"] if due else "无截止日期"
+        overdue = " 🥶过期" if due and due["start"] < today and status_name != "Done" else ""
+        lines.append(f"- [{status_name}] {name}（截止：{due_str}）{overdue}")
+
+    return "\n".join(lines)
 
 # ---- OpenAI 格式的工具描述 ----
 
@@ -115,6 +179,24 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_notion_todos",
+            "description": "查询用户的 Notion 待办事项列表。用户问'我有什么todo'、'今天要做什么'、'未完成的任务'等时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["not_started", "in_progress", "done", "all"],
+                        "description": "过滤状态：not_started(未开始), in_progress(进行中), done(已完成), all(全部)"
+                    }
+                },
+                "required": []
             }
         }
     }

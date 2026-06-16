@@ -1,9 +1,31 @@
+import asyncio
+import os
+from dotenv import load_dotenv
 from core.agent import Agent
-from core.memory import init_db
+from core.memory import init_db, clear_history
+from core.mcp_client import MCPClient
 
+load_dotenv()
 init_db()
-agent = Agent(user_id="cli_user")
-print("Agent ready! Type 'quit' to exit, 'clear' to reset history.\n")
+
+async def setup_mcp():
+    mcp = MCPClient()
+    await mcp.connect(
+        server_name="filesystem",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-filesystem", "/Users/zxia/Desktop"]
+    )
+    await mcp.connect(
+        server_name="github",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-github"],
+        env={"GITHUB_PERSONAL_ACCESS_TOKEN": os.getenv("GITHUB_TOKEN")}
+    )
+    return mcp
+
+mcp = asyncio.run(setup_mcp())
+agent = Agent(user_id="cli_user", mcp=mcp)
+print("Agent ready! MCP tools loaded.\n")
 
 while True:
     user_input = input("You: ").strip()
@@ -13,7 +35,6 @@ while True:
         print("Bye!")
         break
     if user_input.lower() == "clear":
-        from core.memory import clear_history
         clear_history("cli_user")
         print("历史已清空\n")
         continue

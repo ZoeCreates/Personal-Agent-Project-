@@ -29,7 +29,9 @@ def load_history(user_id: str, limit: int = 20) -> list:
             messages.append(json.loads(line))
         except json.JSONDecodeError:
             continue
-    return messages[-limit:]
+    # 过滤掉 content 为 None 或空的消息，避免 Anthropic API 报错
+    valid = [m for m in messages if m.get("content")]
+    return valid[-limit:]
 
 def clear_history(user_id: str):
     """清空某用户的历史"""
