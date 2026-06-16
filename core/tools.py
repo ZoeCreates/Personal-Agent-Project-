@@ -64,6 +64,18 @@ def get_current_time() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 @register_tool
+def set_reminder(message: str, remind_time: str, user_id: str = "default") -> str:
+    """Set a reminder. remind_time must be in format 'YYYY-MM-DD HH:MM'"""
+    from core.reminder import save_reminder
+    try:
+        from datetime import datetime
+        datetime.strptime(remind_time, "%Y-%m-%d %H:%M")
+    except ValueError:
+        return "Invalid time format. Use YYYY-MM-DD HH:MM, e.g. '2026-06-16 09:00'"
+    save_reminder(user_id, message, remind_time)
+    return f"Reminder set: '{message}' at {remind_time}"
+
+@register_tool
 def get_notion_todos(status: str = "not_started") -> str:
     """查询 Notion 待办事项。status 可以是 'not_started'(未开始), 'in_progress'(进行中), 'done'(已完成), 'all'(全部)"""
     import requests, os
@@ -179,6 +191,27 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_reminder",
+            "description": "Set a reminder for the user. Use when user says 'remind me', 'set a reminder', 'alert me at', etc.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "What to remind the user about"
+                    },
+                    "remind_time": {
+                        "type": "string",
+                        "description": "When to send the reminder, format: YYYY-MM-DD HH:MM"
+                    }
+                },
+                "required": ["message", "remind_time"]
             }
         }
     },

@@ -23,18 +23,17 @@ Rules:
 - Respond ONLY to the user's latest message. Do not continue or assume tasks from previous messages.
 - Only use tools when the current message explicitly requires them. A greeting like "hi" never needs tools.
 - When using GitHub tools, always use the username "{github_username}" unless the user explicitly mentions a different account.
+- You CAN set reminders using the set_reminder tool. When user says "remind me to X at Y", call set_reminder immediately.
 - Always summarize tool results in clear, natural language. Never show raw JSON.
 - Answer directly and concisely. No disclaimers."""
 
     def run(self, user_input: str) -> str:
-        # 保存用户消息
-        save_message(self.user_id, "user", user_input)
-
-        # 从数据库读取历史
+        # 先加载历史，再保存当前消息（避免当前消息被当成孤立消息过滤）
         history = load_history(self.user_id)
+        save_message(self.user_id, "user", user_input)
         if history:
             print(f"  [记忆加载] 用户 {self.user_id}，读取 {len(history)} 条历史")
-        messages = [{"role": "system", "content": self.system_prompt}] + history
+        messages = [{"role": "system", "content": self.system_prompt}] + history + [{"role": "user", "content": user_input}]
 
         # 合并内置工具和 MCP 工具
         all_tools = TOOLS + (self.mcp.tools if self.mcp else [])
@@ -61,6 +60,10 @@ Rules:
 
                 print(f"  [工具调用] {name}({args})")
 
+                # 自动注入 user_id 给需要它的工具
+                if name == "set_reminder":
+                    args["user_id"] = self.user_id
+
                 func = TOOL_FUNCTIONS.get(name)
                 if func:
                     result = func(**args)
@@ -81,7 +84,7 @@ Rules:
                     }]
                 })
 
-            response = self.llm.chat(messages)
+            response = self.llm.chat(messages, tools=all_tools)
 
         # 保存 AI 回复
         final_content = response.content or ""

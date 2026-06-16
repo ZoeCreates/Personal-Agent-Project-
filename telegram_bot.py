@@ -1,9 +1,13 @@
 import os
+import time
+import threading
+from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from core.agent import Agent
 from core.memory import init_db, clear_history
+from core.reminder import get_pending_reminders, mark_sent
 
 load_dotenv()
 init_db()
@@ -26,20 +30,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         response = agent.run(user_input)
     except Exception as e:
-        response = "抱歉，出错了，请再试一次。"
+        response = "Sorry, something went wrong. Please try again."
         print(f"  [错误] {e}")
 
-    await update.message.reply_text(response)
+    await update.message.reply_text(response or "Sorry, I couldn't generate a response. Please try again.")
 
 async def handle_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     clear_history(user_id)
     if user_id in user_agents:
         del user_agents[user_id]
-    await update.message.reply_text("✅ 对话历史已清空！")
+    await update.message.reply_text("✅ History cleared!")
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 你好！我是你的 AI 助手，有什么可以帮你的？\n\n发送 /clear 可以清空对话历史。")
+    await update.message.reply_text("👋 Hi! I'm your AI assistant. How can I help you?\n\nUse /clear to reset conversation history.")
+
+def start_reminder_checker(bot_app):
+    """后台线程：每分钟检查一次到期的提醒"""
+    def check():
+        while True:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            for r in get_pending_reminders():
+                if r["time"] <= now:
+                    try:
+                        import asyncio
+                        asyncio.run(bot_app.bot.send_message(
+                            chat_id=r["user_id"],
+                            text=f"⏰ Reminder: {r['message']}"
+                        ))
+                        mark_sent(r["user_id"], r["message"], r["time"])
+                        print(f"  [Reminder] Sent to {r['user_id']}: {r['message']}")
+                    except Exception as e:
+                        print(f"  [Reminder Error] {e}")
+            time.sleep(60)
+
+    thread = threading.Thread(target=check, daemon=True)
+    thread.start()
 
 if __name__ == "__main__":
     token = os.getenv("TELEGRAM_TOKEN")
@@ -47,5 +73,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", handle_start))
     app.add_handler(CommandHandler("clear", handle_clear))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("Telegram Bot 启动中...")
+    start_reminder_checker(app)
+    print("Telegram Bot starting...")
     app.run_polling()
