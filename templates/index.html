@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>My Agent</h1>
+            <button id="clear-btn" onclick="clearHistory()">清空对话</button>
+        </div>
+
+        <div class="messages" id="messages"></div>
+
+        <div class="input-area">
+            <input type="text" id="input" placeholder="输入消息..." autocomplete="off" />
+            <button onclick="sendMessage()">发送</button>
+        </div>
+    </div>
+
+    <script>
+        const input = document.getElementById("input");
+        const messages = document.getElementById("messages");
+
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") sendMessage();
+        });
+
+        function addMessage(role, text) {
+            const div = document.createElement("div");
+            div.className = `message ${role}`;
+            div.innerText = text;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = "";
+            addMessage("user", text);
+
+            const thinking = document.createElement("div");
+            thinking.className = "message agent thinking";
+            thinking.innerText = "思考中...";
+            messages.appendChild(thinking);
+            messages.scrollTop = messages.scrollHeight;
+
+            try {
+                const res = await fetch("/chat", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({message: text})
+                });
+                const data = await res.json();
+                thinking.remove();
+                addMessage("agent", data.reply || "（无回复）");
+            } catch (e) {
+                thinking.remove();
+                addMessage("agent", "请求失败，请重试");
+            }
+        }
+
+        async function clearHistory() {
+            await fetch("/clear", {method: "POST"});
+            messages.innerHTML = "";
+            addMessage("agent", "对话已清空");
+        }
+    </script>
+</body>
+</html>
