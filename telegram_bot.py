@@ -52,13 +52,14 @@ def start_reminder_checker(bot_app):
             now = datetime.now().strftime("%Y-%m-%d %H:%M")
             for r in get_pending_reminders():
                 if r["time"] <= now:
+                    # Mark sent first to avoid duplicate delivery if send fails
+                    mark_sent(r["user_id"], r["message"], r["time"])
                     try:
                         import asyncio
                         asyncio.run(bot_app.bot.send_message(
                             chat_id=r["user_id"],
                             text=f"⏰ Reminder: {r['message']}"
                         ))
-                        mark_sent(r["user_id"], r["message"], r["time"])
                         print(f"  [Reminder] Sent to {r['user_id']}: {r['message']}")
                     except Exception as e:
                         print(f"  [Reminder Error] {e}")

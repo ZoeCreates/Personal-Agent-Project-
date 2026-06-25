@@ -36,18 +36,17 @@ def load_history(user_id: str, limit: int = 20) -> list:
     # 过滤空 content
     messages = [m for m in messages if m.get("content")]
 
-    # 过滤孤立的 user 消息（后面没有 assistant 回复的）
+    # 过滤孤立的 user 消息（紧接着的下一条不是 assistant 的）
     cleaned = []
     for i, m in enumerate(messages):
         if m["role"] == "user":
-            # 检查后面是否有 assistant 回复
-            has_reply = any(
-                messages[j]["role"] == "assistant"
-                for j in range(i + 1, len(messages))
-                if messages[j]["role"] in ("user", "assistant")
-            )
-            if not has_reply:
-                continue  # 孤立消息，跳过
+            next_role = None
+            for j in range(i + 1, len(messages)):
+                if messages[j].get("content"):
+                    next_role = messages[j]["role"]
+                    break
+            if next_role != "assistant":
+                continue
         cleaned.append(m)
 
     # 确保历史以 user 消息结尾（Anthropic 要求）
