@@ -1,4 +1,5 @@
 anthropic
+mcp
 python-telegram-bot
 python-dotenv
 duckduckgo-search
