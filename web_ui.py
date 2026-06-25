@@ -1,6 +1,7 @@
 import asyncio
+import json
 import os
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from core.tools import TOOLS
 from pathlib import Path
 from dotenv import load_dotenv
@@ -42,6 +43,32 @@ def chat():
         return jsonify({"error": "empty message"}), 400
     response = agent.run(user_input)
     return jsonify({"reply": response})
+
+@app.route("/chat/stream")
+def chat_stream():
+    user_input = request.args.get("message", "").strip()
+    if not user_input:
+        return jsonify({"error": "empty message"}), 400
+
+    def generate():
+        for event_type, data in agent.stream(user_input):
+            payload = json.dumps({"type": event_type, "data": data})
+            yield f"data: {payload}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+@app.route("/reminders/poll")
+def reminders_poll():
+    from core.reminder import get_pending_reminders, mark_sent
+    from datetime import datetime
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    due = []
+    for r in get_pending_reminders():
+        if r["user_id"] == "web_user" and r["time"] <= now:
+            due.append(r["message"])
+            mark_sent(r["user_id"], r["message"], r["time"])
+    return jsonify({"reminders": due})
 
 @app.route("/clear", methods=["POST"])
 def clear():

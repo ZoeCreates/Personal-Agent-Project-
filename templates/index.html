@@ -41,32 +41,49 @@
             messages.scrollTop = messages.scrollHeight;
         }
 
-        async function sendMessage() {
+        function sendMessage() {
             const text = input.value.trim();
             if (!text) return;
             input.value = "";
             addMessage("user", text);
 
-            const thinking = document.createElement("div");
-            thinking.className = "message agent thinking";
-            thinking.innerText = "Thinking...";
-            messages.appendChild(thinking);
+            const bubble = document.createElement("div");
+            bubble.className = "message agent";
+            bubble.innerText = "Thinking...";
+            messages.appendChild(bubble);
             messages.scrollTop = messages.scrollHeight;
 
-            try {
-                const res = await fetch("/chat", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({message: text})
-                });
-                const data = await res.json();
-                thinking.remove();
-                addMessage("agent", data.reply || "(no reply)");
-            } catch (e) {
-                thinking.remove();
-                addMessage("agent", "Request failed, please try again.");
-            }
+            let started = false;
+            const es = new EventSource("/chat/stream?message=" + encodeURIComponent(text));
+
+            es.onmessage = (e) => {
+                const {type, data} = JSON.parse(e.data);
+                if (type === "text") {
+                    if (!started) { bubble.innerText = ""; started = true; }
+                    bubble.innerText += data;
+                    messages.scrollTop = messages.scrollHeight;
+                } else if (type === "tool") {
+                    bubble.innerText = data;
+                    started = false;
+                } else if (type === "done") {
+                    es.close();
+                }
+            };
+
+            es.onerror = () => {
+                es.close();
+                if (!started) bubble.innerText = "Request failed, please try again.";
+            };
         }
+
+        // Poll for due reminders every 30 seconds
+        setInterval(async () => {
+            const res = await fetch("/reminders/poll");
+            const data = await res.json();
+            for (const msg of data.reminders) {
+                addMessage("agent", "⏰ Reminder: " + msg);
+            }
+        }, 30000);
 
         async function clearHistory() {
             await fetch("/clear", {method: "POST"});
