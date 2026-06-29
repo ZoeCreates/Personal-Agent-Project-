@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class LLMClient:
     def __init__(self):
         self.client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -24,11 +25,15 @@ class LLMClient:
         if tools:
             for t in tools:
                 f = t["function"]
-                anthropic_tools.append({
-                    "name": f["name"],
-                    "description": f.get("description", ""),
-                    "input_schema": f.get("parameters", {"type": "object", "properties": {}})
-                })
+                anthropic_tools.append(
+                    {
+                        "name": f["name"],
+                        "description": f.get("description", ""),
+                        "input_schema": f.get(
+                            "parameters", {"type": "object", "properties": {}}
+                        ),
+                    }
+                )
 
         kwargs = {
             "model": self.model,
@@ -56,11 +61,15 @@ class LLMClient:
         if tools:
             for t in tools:
                 f = t["function"]
-                anthropic_tools.append({
-                    "name": f["name"],
-                    "description": f.get("description", ""),
-                    "input_schema": f.get("parameters", {"type": "object", "properties": {}})
-                })
+                anthropic_tools.append(
+                    {
+                        "name": f["name"],
+                        "description": f.get("description", ""),
+                        "input_schema": f.get(
+                            "parameters", {"type": "object", "properties": {}}
+                        ),
+                    }
+                )
 
         kwargs = {
             "model": self.model,
@@ -76,6 +85,7 @@ class LLMClient:
 
 class AnthropicResponse:
     """把 Anthropic 响应包装成和 OpenAI 一样的接口，让 agent.py 不用改"""
+
     def __init__(self, response):
         self._response = response
         self.tool_calls = []
@@ -93,6 +103,7 @@ class AnthropicResponse:
 
 class AnthropicToolCall:
     """把 Anthropic tool_use block 包装成 OpenAI tool_call 格式"""
+
     def __init__(self, block):
         self.id = block.id
         self.function = AnthropicFunction(block.name, block.input)
