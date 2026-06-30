@@ -8,17 +8,28 @@ from core.tools import TOOLS, TOOL_FUNCTIONS
 from core.memory import save_message, load_history
 from core.mcp_client import MCPClient
 
+
 class Agent:
     def __init__(self, user_id: str = "default", mcp: MCPClient = None):
         self.llm = LLMClient()
         self.user_id = user_id
         self.mcp = mcp
         github_username = os.getenv("GITHUB_USERNAME", "unknown")
+
+        from pathlib import Path
+
+        memory_file = Path.home() / ".my-agent" / "MEMORY.md"
+        memory_content = (
+            memory_file.read_text(encoding="utf-8").strip()
+            if memory_file.exists()
+            else ""
+        )
+
         self.system_prompt = f"""You are a helpful AI assistant with access to tools including GitHub, file system, web search, stock prices, and more.
 
 User info:
 - GitHub username: {github_username}
-
+{chr(10) + '## Long-term memory about this user' + chr(10) + memory_content + chr(10) if memory_content else ''}
 Rules:
 - Respond ONLY to the user's latest message. Do not continue or assume tasks from previous messages.
 - Only use tools when the current message explicitly requires them. A greeting like "hi" never needs tools.
@@ -33,7 +44,11 @@ Rules:
         save_message(self.user_id, "user", user_input)
         if history:
             print(f"  [记忆加载] 用户 {self.user_id}，读取 {len(history)} 条历史")
-        messages = [{"role": "system", "content": self.system_prompt}] + history + [{"role": "user", "content": user_input}]
+        messages = (
+            [{"role": "system", "content": self.system_prompt}]
+            + history
+            + [{"role": "user", "content": user_input}]
+        )
 
         # 合并内置工具和 MCP 工具
         all_tools = TOOLS + (self.mcp.tools if self.mcp else [])
@@ -43,10 +58,7 @@ Rules:
 
         # 如果 LLM 决定调用工具
         while response.tool_calls:
-            messages.append({
-                "role": "assistant",
-                "content": list(response)
-            })
+            messages.append({"role": "assistant", "content": list(response)})
 
             for tool_call in response.tool_calls:
                 name = tool_call.function.name
@@ -75,14 +87,18 @@ Rules:
 
                 print(f"  [工具结果] {result}")
 
-                messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": tool_call.id,
-                        "content": result
-                    }]
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tool_call.id,
+                                "content": result,
+                            }
+                        ],
+                    }
+                )
 
             response = self.llm.chat(messages, tools=all_tools)
 
@@ -99,7 +115,11 @@ Rules:
         """
         history = load_history(self.user_id)
         save_message(self.user_id, "user", user_input)
-        messages = [{"role": "system", "content": self.system_prompt}] + history + [{"role": "user", "content": user_input}]
+        messages = (
+            [{"role": "system", "content": self.system_prompt}]
+            + history
+            + [{"role": "user", "content": user_input}]
+        )
         all_tools = TOOLS + (self.mcp.tools if self.mcp else [])
 
         while True:
@@ -138,7 +158,15 @@ Rules:
                 else:
                     result = f"未知工具: {name}"
                 print(f"  [工具结果] {result}")
-                messages.append({
-                    "role": "user",
-                    "content": [{"type": "tool_result", "tool_use_id": tool_call.id, "content": result}]
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tool_call.id,
+                                "content": result,
+                            }
+                        ],
+                    }
+                )
