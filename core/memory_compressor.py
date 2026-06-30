@@ -4,11 +4,15 @@ Dream 机制 — 记忆压缩
 """
 
 import json
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
-COMPRESS_THRESHOLD = 30  # 超过这么多条就触发压缩
+COMPRESS_THRESHOLD = 30  # 超过这么多行就触发压缩
+TOKEN_THRESHOLD = 8000  # 估算 token 数超过此值也触发压缩
 KEEP_RECENT = 10  # 压缩时保留最近几条不动
+IDLE_MINUTES = 15  # 用户空闲多少分钟后自动压缩
 
 SESSIONS_DIR = Path.home() / ".my-agent" / "sessions"
 
@@ -18,9 +22,25 @@ def _session_file(user_id: str) -> Path:
     return SESSIONS_DIR / f"{safe_name}.jsonl"
 
 
+def estimate_tokens(messages: list) -> int:
+    """粗略估算 token 数（1 token ≈ 4 字符）"""
+    total = 0
+    for m in messages:
+        content = m.get("content", "")
+        if isinstance(content, list):
+            content = " ".join(
+                b.get("text", "") if isinstance(b, dict) else str(b) for b in content
+            )
+        total += len(str(content))
+    return total // 4
+
+
 def maybe_compress(user_id: str) -> bool:
     """
     检查是否需要压缩，需要则执行。
+    触发条件（满足其一即可）：
+      - 行数 >= COMPRESS_THRESHOLD
+      - 估算 token 数 >= TOKEN_THRESHOLD
     返回 True 表示执行了压缩，False 表示无需压缩。
     """
     path = _session_file(user_id)
@@ -30,11 +50,23 @@ def maybe_compress(user_id: str) -> bool:
     lines = [
         l for l in path.read_text(encoding="utf-8").strip().splitlines() if l.strip()
     ]
-    if len(lines) < COMPRESS_THRESHOLD:
-        return False
 
-    compress(user_id, lines)
-    return True
+    if len(lines) >= COMPRESS_THRESHOLD:
+        compress(user_id, lines)
+        return True
+
+    # 行数不够时才做 token 估算（避免每次都解析 JSON）
+    messages = []
+    for line in lines:
+        try:
+            messages.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    if estimate_tokens(messages) >= TOKEN_THRESHOLD:
+        compress(user_id, lines)
+        return True
+
+    return False
 
 
 def compress(user_id: str, lines: list = None):
@@ -95,6 +127,76 @@ def compress(user_id: str, lines: list = None):
 
 
 MEMORY_FILE = Path.home() / ".my-agent" / "MEMORY.md"
+
+
+# ---------------------------------------------------------------------------
+# 空闲自动压缩
+# ---------------------------------------------------------------------------
+
+_compactor_started = False
+_compactor_lock = threading.Lock()
+
+
+class IdleCompactor:
+    """后台守护线程：每分钟扫描所有 session 文件，对空闲超过 IDLE_MINUTES 的用户触发 Dream 压缩。"""
+
+    def __init__(self, interval: int = 60):
+        self._interval = interval
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name="IdleCompactor"
+        )
+
+    def start(self):
+        self._thread.start()
+        print(f"  [Dream] 空闲检测已启动（{IDLE_MINUTES} 分钟无活动自动压缩）")
+
+    def stop(self):
+        self._stop.set()
+
+    def _run(self):
+        while not self._stop.wait(self._interval):
+            self._check_all()
+
+    def _check_all(self):
+        if not SESSIONS_DIR.exists():
+            return
+        now = time.time()
+        for session_file in SESSIONS_DIR.glob("*.jsonl"):
+            try:
+                idle_sec = now - session_file.stat().st_mtime
+                if idle_sec < IDLE_MINUTES * 60:
+                    continue
+                lines = [
+                    l
+                    for l in session_file.read_text(encoding="utf-8")
+                    .strip()
+                    .splitlines()
+                    if l.strip()
+                ]
+                if len(lines) < COMPRESS_THRESHOLD:
+                    continue
+                user_id = session_file.stem  # safe_name，传给 compress() 可直接用
+                print(
+                    f"  [Dream] 用户 {user_id} 空闲 {idle_sec / 60:.0f} 分钟，触发自动压缩"
+                )
+                compress(user_id, lines)
+            except Exception:
+                pass  # 不让异常中断整个扫描
+
+
+def start_idle_compactor() -> None:
+    """全局只启动一次空闲压缩守护线程。"""
+    global _compactor_started
+    with _compactor_lock:
+        if not _compactor_started:
+            IdleCompactor().start()
+            _compactor_started = True
+
+
+# ---------------------------------------------------------------------------
+# 长期记忆更新
+# ---------------------------------------------------------------------------
 
 
 def _update_memory_md(messages: list) -> None:

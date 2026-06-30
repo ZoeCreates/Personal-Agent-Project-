@@ -42,9 +42,11 @@ class MessageBus:
 
     def __init__(self, mcp=None):
         from core.agent import Agent
+        from core.memory_compressor import start_idle_compactor
 
         self._mcp = mcp
         self._agents: dict = {}  # user_id → Agent
+        start_idle_compactor()
 
     def _get_agent(self, user_id: str):
         """按需创建 Agent（每个用户独立）"""
@@ -59,6 +61,26 @@ class MessageBus:
         同步处理：接收 Message → 返回完整 Response
         适合 Telegram Bot 等非流式场景
         """
+        # 内置命令
+        if message.text.strip().lower() == "/dream":
+            from core.memory_compressor import compress
+
+            try:
+                compress(message.user_id)
+                return Response(
+                    text="✅ Dream 完成，记忆已压缩并更新。",
+                    channel=message.channel,
+                    user_id=message.user_id,
+                )
+            except Exception as e:
+                return Response(
+                    text=f"❌ Dream 失败：{e}",
+                    channel=message.channel,
+                    user_id=message.user_id,
+                    success=False,
+                    error=str(e),
+                )
+
         try:
             agent = self._get_agent(message.user_id)
             reply = agent.run(message.text)
@@ -80,6 +102,18 @@ class MessageBus:
         适合 Web SSE 等流式场景
         event_type: 'text' | 'tool' | 'error' | 'done'
         """
+        # 内置命令
+        if message.text.strip().lower() == "/dream":
+            from core.memory_compressor import compress
+
+            try:
+                compress(message.user_id)
+                yield ("text", "✅ Dream 完成，记忆已压缩并更新。")
+            except Exception as e:
+                yield ("error", str(e))
+            yield ("done", None)
+            return
+
         try:
             agent = self._get_agent(message.user_id)
             yield from agent.stream(message.text)
