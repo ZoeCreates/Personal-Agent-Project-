@@ -1,4 +1,5 @@
 anthropic
+openai
 mcp
 python-telegram-bot
 python-dotenv
