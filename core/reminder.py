@@ -4,17 +4,14 @@ from datetime import datetime
 
 REMINDERS_FILE = Path.home() / ".my-agent" / "reminders.jsonl"
 
+
 def save_reminder(user_id: str, message: str, remind_time: str) -> str:
     REMINDERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    entry = {
-        "user_id": user_id,
-        "message": message,
-        "time": remind_time,
-        "sent": False
-    }
+    entry = {"user_id": user_id, "message": message, "time": remind_time, "sent": False}
     with open(REMINDERS_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     return remind_time
+
 
 def get_pending_reminders() -> list:
     if not REMINDERS_FILE.exists():
@@ -29,6 +26,7 @@ def get_pending_reminders() -> list:
             continue
     return reminders
 
+
 def mark_sent(user_id: str, message: str, remind_time: str):
     if not REMINDERS_FILE.exists():
         return
@@ -37,7 +35,11 @@ def mark_sent(user_id: str, message: str, remind_time: str):
     for line in lines:
         try:
             r = json.loads(line)
-            if r["user_id"] == user_id and r["message"] == message and r["time"] == remind_time:
+            if (
+                r["user_id"] == user_id
+                and r["message"] == message
+                and r["time"] == remind_time
+            ):
                 r["sent"] = True
             new_lines.append(json.dumps(r, ensure_ascii=False))
         except json.JSONDecodeError:

@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 *.jsonl
 .DS_Store
+agent_data/

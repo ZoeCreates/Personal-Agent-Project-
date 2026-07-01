@@ -18,6 +18,11 @@ class Agent:
 
         from pathlib import Path
 
+        soul_file = Path.home() / ".my-agent" / "SOUL.md"
+        soul_content = (
+            soul_file.read_text(encoding="utf-8").strip() if soul_file.exists() else ""
+        )
+
         memory_file = Path.home() / ".my-agent" / "MEMORY.md"
         memory_content = (
             memory_file.read_text(encoding="utf-8").strip()
@@ -25,7 +30,9 @@ class Agent:
             else ""
         )
 
-        self.system_prompt = f"""You are a helpful AI assistant with access to tools including GitHub, file system, web search, stock prices, and more.
+        soul_section = soul_content + "\n\n" if soul_content else ""
+
+        self.system_prompt = f"""{soul_section}You are a helpful AI assistant with access to tools including GitHub, file system, web search, stock prices, and more.
 
 User info:
 - GitHub username: {github_username}
