@@ -7,14 +7,14 @@ import json
 import threading
 import time
 from datetime import datetime
-from pathlib import Path
+from core.paths import SESSIONS_DIR, MEMORY_FILE, migrate_legacy_data
 
 COMPRESS_THRESHOLD = 30  # 超过这么多行就触发压缩
 TOKEN_THRESHOLD = 8000  # 估算 token 数超过此值也触发压缩
 KEEP_RECENT = 10  # 压缩时保留最近几条不动
 IDLE_MINUTES = 15  # 用户空闲多少分钟后自动压缩
 
-SESSIONS_DIR = Path.home() / ".my-agent" / "sessions"
+migrate_legacy_data()
 
 
 def _session_file(user_id: str) -> Path:
@@ -124,9 +124,6 @@ def compress(user_id: str, lines: list = None):
 
     # 同步更新跨 session 的长期记忆
     _update_memory_md(old_summaries + to_compress)
-
-
-MEMORY_FILE = Path.home() / ".my-agent" / "MEMORY.md"
 
 
 # ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ import json
 import os
 from dotenv import load_dotenv
 from core.llm import LLMClient, AnthropicResponse
+from core.paths import MEMORY_FILE, SOUL_FILE, migrate_legacy_data
 
 load_dotenv()
 from core.tools import TOOLS, TOOL_FUNCTIONS
@@ -11,21 +12,23 @@ from core.mcp_client import MCPClient
 
 class Agent:
     def __init__(self, user_id: str = "default", mcp: MCPClient = None):
+        migrate_legacy_data()
         self.llm = LLMClient()
         self.user_id = user_id
         self.mcp = mcp
         github_username = os.getenv("GITHUB_USERNAME", "unknown")
-
-        from pathlib import Path
-
-        memory_file = Path.home() / ".my-agent" / "MEMORY.md"
+        soul_content = (
+            SOUL_FILE.read_text(encoding="utf-8").strip() if SOUL_FILE.exists() else ""
+        )
         memory_content = (
-            memory_file.read_text(encoding="utf-8").strip()
-            if memory_file.exists()
+            MEMORY_FILE.read_text(encoding="utf-8").strip()
+            if MEMORY_FILE.exists()
             else ""
         )
 
-        self.system_prompt = f"""You are a helpful AI assistant with access to tools including GitHub, file system, web search, stock prices, and more.
+        soul_section = soul_content + "\n\n" if soul_content else ""
+
+        self.system_prompt = f"""{soul_section}You are a helpful AI assistant with access to tools including GitHub, file system, web search, stock prices, and more.
 
 User info:
 - GitHub username: {github_username}

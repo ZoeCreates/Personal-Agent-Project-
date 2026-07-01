@@ -1,12 +1,13 @@
 import json
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from core.paths import SESSIONS_DIR, ensure_data_dirs, migrate_legacy_data
 
-SESSIONS_DIR = Path.home() / ".my-agent" / "sessions"
+migrate_legacy_data()
 
 
 def init_db():
-    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_data_dirs()
 
 
 def _session_file(user_id: str) -> Path:
