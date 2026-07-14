@@ -12,23 +12,41 @@ class ProviderFallbackStream:
     def __enter__(self):
         last_error = None
 
-        for model_name in self._manager.models:
-            call_kwargs = dict(self._kwargs)
-            call_kwargs["model"] = model_name
-            if model_name != self._manager.primary_model:
-                print(f"  [LLM] 主模型失败，流式切换到 fallback: {model_name}")
-            try:
-                cm = self._manager.anthropic.stream_with_model(model_name, call_kwargs)
-                stream_obj = cm.__enter__()
-                self._active_cm = cm
-                return stream_obj
-            except Exception as e:
-                last_error = e
-                print(f"  [LLM] 流式模型 {model_name} 调用失败：{e}")
+        if self._manager.primary_backend == "openai":
+            if not self._manager.openai.enabled:
+                raise RuntimeError("OpenAI-compatible primary 未配置 API key")
+            print(
+                f"  [LLM] 使用 {self._manager.openai.label} 流式: "
+                f"{self._manager.openai_model}"
+            )
+            cm = self._manager.openai.stream_fallback_from_anthropic_kwargs(
+                self._kwargs
+            )
+            stream_obj = cm.__enter__()
+            self._active_cm = cm
+            return stream_obj
+
+        if self._manager.anthropic_enabled:
+            for model_name in self._manager.models:
+                call_kwargs = dict(self._kwargs)
+                call_kwargs["model"] = model_name
+                if model_name != self._manager.primary_model:
+                    print(f"  [LLM] 主模型失败，流式切换到 fallback: {model_name}")
+                try:
+                    cm = self._manager.anthropic.stream_with_model(
+                        model_name, call_kwargs
+                    )
+                    stream_obj = cm.__enter__()
+                    self._active_cm = cm
+                    return stream_obj
+                except Exception as e:
+                    last_error = e
+                    print(f"  [LLM] 流式模型 {model_name} 调用失败：{e}")
 
         if self._manager.openai.enabled:
             print(
-                f"  [LLM] Anthropic 流式全部失败，切换 OpenAI fallback: {self._manager.openai_model}"
+                f"  [LLM] Anthropic 流式全部失败，切换 "
+                f"{self._manager.openai.label}: {self._manager.openai_model}"
             )
             cm = self._manager.openai.stream_fallback_from_anthropic_kwargs(
                 self._kwargs
@@ -49,12 +67,20 @@ class FallbackManager:
     """Provider-agnostic fallback policy manager."""
 
     def __init__(
-        self, anthropic, openai, primary_model: str, fallback_models: list[str]
+        self,
+        anthropic,
+        openai,
+        primary_model: str,
+        fallback_models: list[str],
+        primary_backend: str = "anthropic",
+        anthropic_enabled: bool = True,
     ):
         self.anthropic = anthropic
         self.openai = openai
         self.primary_model = primary_model
         self.openai_model = getattr(openai, "model", "")
+        self.primary_backend = primary_backend
+        self.anthropic_enabled = anthropic_enabled
         self.models = self._build_models(primary_model, fallback_models)
 
     @staticmethod
@@ -64,20 +90,31 @@ class FallbackManager:
 
     def chat(self, kwargs: dict):
         last_error = None
-        for model_name in self.models:
-            try:
-                call_kwargs = dict(kwargs)
-                call_kwargs["model"] = model_name
-                if model_name != self.primary_model:
-                    print(f"  [LLM] 主模型失败，切换到 fallback: {model_name}")
-                return self.anthropic.chat_with_model(model_name, call_kwargs)
-            except Exception as e:
-                last_error = e
-                print(f"  [LLM] 模型 {model_name} 调用失败：{e}")
+
+        if self.primary_backend == "openai":
+            if not self.openai.enabled:
+                raise RuntimeError("OpenAI-compatible primary 未配置 API key")
+            print(
+                f"  [LLM] 使用 {self.openai.label}: {self.openai_model}"
+            )
+            return self.openai.chat_from_anthropic_kwargs(kwargs)
+
+        if self.anthropic_enabled:
+            for model_name in self.models:
+                try:
+                    call_kwargs = dict(kwargs)
+                    call_kwargs["model"] = model_name
+                    if model_name != self.primary_model:
+                        print(f"  [LLM] 主模型失败，切换到 fallback: {model_name}")
+                    return self.anthropic.chat_with_model(model_name, call_kwargs)
+                except Exception as e:
+                    last_error = e
+                    print(f"  [LLM] 模型 {model_name} 调用失败：{e}")
 
         if self.openai.enabled:
             print(
-                f"  [LLM] Anthropic 全部失败，切换 OpenAI fallback: {self.openai_model}"
+                f"  [LLM] Anthropic 全部失败，切换 {self.openai.label}: "
+                f"{self.openai_model}"
             )
             return self.openai.chat_from_anthropic_kwargs(kwargs)
 

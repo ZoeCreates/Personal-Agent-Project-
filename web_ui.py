@@ -13,9 +13,10 @@ from core.tools import TOOLS
 from pathlib import Path
 from dotenv import load_dotenv
 from core.memory import init_db, clear_history
-from core.mcp_client import MCPClient
 from core.message_bus import MessageBus
 from core.channels.web import WebChannel
+from core.llm import has_llm_credentials
+from core.mcp_setup import create_mcp_client
 
 load_dotenv()
 init_db()
@@ -24,7 +25,8 @@ init_db()
 static_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 app = Flask(__name__, static_folder=static_folder, static_url_path="/static")
 API_KEY_ERROR_MSG = (
-    "Missing ANTHROPIC_API_KEY. Please set it in .env and restart the app."
+    "Missing LLM credentials. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GROQ_API_KEY "
+    "in .env and restart the app."
 )
 
 
@@ -37,29 +39,10 @@ def _sse_payload(event_type: str, data):
     return f"data: {payload}\n\n"
 
 
-async def setup_mcp():
-    mcp = MCPClient()
-    desktop_dir = Path.home() / "Desktop"
-    filesystem_root = str(desktop_dir if desktop_dir.exists() else Path.cwd())
-    github_token = os.getenv("GITHUB_TOKEN")
-    await mcp.connect(
-        server_name="filesystem",
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-filesystem", filesystem_root],
-    )
-    if github_token:
-        await mcp.connect(
-            server_name="github",
-            command="npx",
-            args=["-y", "@modelcontextprotocol/server-github"],
-            env={"GITHUB_PERSONAL_ACCESS_TOKEN": github_token},
-        )
-    return mcp
-
-
-mcp = asyncio.run(setup_mcp())
+mcp = asyncio.run(create_mcp_client())
 bus = MessageBus(mcp=mcp)
 web_channel = WebChannel()
+bus.register_channel(web_channel)
 
 
 @app.route("/")
@@ -69,7 +52,7 @@ def index():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    if not has_llm_credentials():
         return jsonify({"error": API_KEY_ERROR_MSG}), 503
 
     data = request.get_json(silent=True) or {}
@@ -79,6 +62,7 @@ def chat():
     try:
         msg = web_channel.format_incoming({"user_id": "web_user", "text": user_input})
         result = bus.process(msg)
+        bus.deliver(result)
         if not result.success:
             return (
                 jsonify({"error": result.error or "Request failed, please try again."}),
@@ -94,7 +78,7 @@ def chat():
 
 @app.route("/chat/stream")
 def chat_stream():
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    if not has_llm_credentials():
 
         def missing_key_stream():
             yield _sse_payload("error", API_KEY_ERROR_MSG)
@@ -134,15 +118,12 @@ def chat_stream():
 
 @app.route("/reminders/poll")
 def reminders_poll():
-    from core.reminder import get_pending_reminders, mark_sent
-    from datetime import datetime
+    from core.reminder import get_due_reminders, mark_sent
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
     due = []
-    for r in get_pending_reminders():
-        if r["user_id"] == "web_user" and r["time"] <= now:
-            due.append(r["message"])
-            mark_sent(r["user_id"], r["message"], r["time"])
+    for r in get_due_reminders(user_id="web_user"):
+        due.append(r["message"])
+        mark_sent(r["user_id"], r["message"], r["time"])
     return jsonify({"reminders": due})
 
 

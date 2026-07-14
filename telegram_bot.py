@@ -1,7 +1,7 @@
+import asyncio
 import os
 import time
 import threading
-from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import (
@@ -12,16 +12,18 @@ from telegram.ext import (
     ContextTypes,
 )
 from core.memory import init_db, clear_history
-from core.reminder import get_pending_reminders, mark_sent
+from core.reminder import get_due_reminders, mark_sent
 from core.message_bus import MessageBus
 from core.channels.telegram import TelegramChannel
+from core.mcp_setup import create_mcp_client
 
 load_dotenv()
 init_db()
 
-# Message Bus 统一处理所有消息，不再手动管理 Agent 实例池
-bus = MessageBus()
+mcp = asyncio.run(create_mcp_client())
+bus = MessageBus(mcp=mcp)
 telegram_channel = TelegramChannel()
+bus.register_channel(telegram_channel)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -32,7 +34,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id=update.effective_chat.id, action="typing"
     )
 
-    # 用 TelegramChannel 格式化消息，交给 MessageBus 处理
     msg = telegram_channel.format_incoming(
         {
             "user_id": user_id,
@@ -41,15 +42,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
     )
     result = bus.process(msg)
-    reply = result.text or "Sorry, I couldn't generate a response. Please try again."
-
-    await update.message.reply_text(reply)
+    if not result.text:
+        result.text = "Sorry, I couldn't generate a response. Please try again."
+    await telegram_channel.async_send_reply(result)
 
 
 async def handle_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     clear_history(user_id)
-    # 同时清除 MessageBus 中的 Agent 缓存
     bus._agents.pop(user_id, None)
     await update.message.reply_text("✅ History cleared!")
 
@@ -65,23 +65,19 @@ def start_reminder_checker(bot_app):
 
     def check():
         while True:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M")
-            for r in get_pending_reminders():
-                if r["time"] <= now:
-                    # Mark sent first to avoid duplicate delivery if send fails
-                    mark_sent(r["user_id"], r["message"], r["time"])
-                    try:
-                        import asyncio
-
-                        asyncio.run(
-                            bot_app.bot.send_message(
-                                chat_id=r["user_id"],
-                                text=f"⏰ Reminder: {r['message']}",
-                            )
+            for r in get_due_reminders():
+                # Mark sent first to avoid duplicate delivery if send fails
+                mark_sent(r["user_id"], r["message"], r["time"])
+                try:
+                    asyncio.run(
+                        bot_app.bot.send_message(
+                            chat_id=r["user_id"],
+                            text=f"⏰ Reminder: {r['message']}",
                         )
-                        print(f"  [Reminder] Sent to {r['user_id']}: {r['message']}")
-                    except Exception as e:
-                        print(f"  [Reminder Error] {e}")
+                    )
+                    print(f"  [Reminder] Sent to {r['user_id']}: {r['message']}")
+                except Exception as e:
+                    print(f"  [Reminder Error] {e}")
             time.sleep(60)
 
     thread = threading.Thread(target=check, daemon=True)
@@ -91,6 +87,7 @@ def start_reminder_checker(bot_app):
 if __name__ == "__main__":
     token = os.getenv("TELEGRAM_TOKEN")
     app = ApplicationBuilder().token(token).build()
+    telegram_channel.bind_bot(app.bot)
     app.add_handler(CommandHandler("start", handle_start))
     app.add_handler(CommandHandler("clear", handle_clear))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

@@ -1,18 +1,18 @@
 """
 Message Bus — 统一消息中枢
-负责跨平台消息的标准化格式和路由
+负责跨平台消息的标准化格式、Agent 路由，以及通过 Channel 出站
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Iterator
+from typing import Iterator, Optional
 
 
 @dataclass
 class Message:
     """标准消息格式，所有平台共用这个结构"""
 
-    channel: str  # 来源平台: 'web' | 'telegram' | 'discord' 等
+    channel: str  # 来源平台: 'web' | 'telegram' | 'cli' 等
     user_id: str  # 用户 ID（各平台自己定义）
     text: str  # 消息正文
     timestamp: str = field(
@@ -30,6 +30,7 @@ class Response:
     user_id: str
     success: bool = True
     error: Optional[str] = None
+    metadata: dict = field(default_factory=dict)
 
 
 class MessageBus:
@@ -37,16 +38,19 @@ class MessageBus:
     统一消息中枢
     - 持有一个 Agent 实例池（每个 user_id 一个）
     - 接收标准 Message，调用 Agent，返回 Response
-    - 各平台只需调用 process() 或 stream()，不接触 Agent 内部
+    - 可选 register_channel 后，通过 deliver() 由 Channel.send_reply 出站
     """
 
     def __init__(self, mcp=None):
-        from core.agent import Agent
         from core.memory_compressor import start_idle_compactor
 
         self._mcp = mcp
         self._agents: dict = {}  # user_id → Agent
+        self._channels: dict = {}  # channel name → Channel
         start_idle_compactor()
+
+    def register_channel(self, channel) -> None:
+        self._channels[channel.name] = channel
 
     def _get_agent(self, user_id: str):
         """按需创建 Agent（每个用户独立）"""
@@ -71,6 +75,7 @@ class MessageBus:
                     text="✅ Dream 完成，记忆已压缩并更新。",
                     channel=message.channel,
                     user_id=message.user_id,
+                    metadata=dict(message.metadata or {}),
                 )
             except Exception as e:
                 return Response(
@@ -79,13 +84,17 @@ class MessageBus:
                     user_id=message.user_id,
                     success=False,
                     error=str(e),
+                    metadata=dict(message.metadata or {}),
                 )
 
         try:
             agent = self._get_agent(message.user_id)
             reply = agent.run(message.text)
             return Response(
-                text=reply, channel=message.channel, user_id=message.user_id
+                text=reply,
+                channel=message.channel,
+                user_id=message.user_id,
+                metadata=dict(message.metadata or {}),
             )
         except Exception as e:
             return Response(
@@ -94,7 +103,20 @@ class MessageBus:
                 user_id=message.user_id,
                 success=False,
                 error=str(e),
+                metadata=dict(message.metadata or {}),
             )
+
+    def deliver(self, response: Response) -> Response:
+        """把 Response 交给对应 Channel 出站。"""
+        channel = self._channels.get(response.channel)
+        if channel is None:
+            raise RuntimeError(f"未注册 channel: {response.channel}")
+        channel.send_reply(response)
+        return response
+
+    def process_and_deliver(self, message: Message) -> Response:
+        """处理消息并通过 Channel 发回复（同步出站）。"""
+        return self.deliver(self.process(message))
 
     def stream(self, message: Message) -> Iterator[tuple[str, object]]:
         """

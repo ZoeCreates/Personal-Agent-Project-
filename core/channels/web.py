@@ -3,6 +3,8 @@ WebChannel — Web/Flask 平台适配器
 负责 HTTP request ↔ 标准 Message/Response 的转换
 """
 
+from __future__ import annotations
+
 from core.channels.base import Channel
 from core.message_bus import Message, Response
 
@@ -12,11 +14,10 @@ class WebChannel(Channel):
 
     name = "web"
 
+    def __init__(self):
+        self.last_response: Response | None = None
+
     def format_incoming(self, raw_data: dict) -> Message:
-        """
-        把 Web 请求数据转为标准 Message
-        raw_data 示例：{'user_id': 'web_user', 'text': 'hello'}
-        """
         return Message(
             channel=self.name,
             user_id=raw_data.get("user_id", "web_user"),
@@ -25,8 +26,5 @@ class WebChannel(Channel):
         )
 
     def send_reply(self, response: Response) -> None:
-        """
-        Web 是 request/response 模式，回复通过 Flask route 直接 return
-        此方法在 SSE 流式场景下不使用，保留作接口完整性
-        """
-        pass  # Web 回复由 web_ui.py 的 route 直接 return/yield
+        # Flask route 仍会读取 Response；此处记录最近一次回复，统一走 Channel 出站接口。
+        self.last_response = response

@@ -7,3 +7,5 @@ duckduckgo-search
 ddgs
 yfinance
 requests
+flask
+httpx

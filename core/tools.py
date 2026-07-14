@@ -76,6 +76,14 @@ def set_reminder(message: str, remind_time: str, user_id: str = "default") -> st
     return f"Reminder set: '{message}' at {remind_time}"
 
 @register_tool
+def load_skill(name: str) -> str:
+    """Load the full instructions for a named skill from SKILL.md."""
+    from core.skills import get_skills_loader
+
+    return get_skills_loader().load_body(name)
+
+
+@register_tool
 def get_notion_todos(status: str = "not_started") -> str:
     """查询 Notion 待办事项。status 可以是 'not_started'(未开始), 'in_progress'(进行中), 'done'(已完成), 'all'(全部)"""
     import requests, os
@@ -232,5 +240,26 @@ TOOLS = [
                 "required": []
             }
         }
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "load_skill",
+            "description": (
+                "Load full instructions for a skill by name. "
+                "Use when a user task matches an Available skill "
+                "(e.g. code-review, research)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Skill name, e.g. code-review",
+                    }
+                },
+                "required": ["name"],
+            },
+        },
+    },
 ]

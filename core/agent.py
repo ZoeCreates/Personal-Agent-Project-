@@ -32,11 +32,16 @@ class Agent:
 
         soul_section = soul_content + "\n\n" if soul_content else ""
 
+        from core.skills import get_skills_loader
+
+        skills_section = get_skills_loader().get_summary_text()
+        skills_block = f"\n{skills_section}\n" if skills_section else ""
+
         self.system_prompt = f"""{soul_section}You are a helpful AI assistant with access to tools including GitHub, file system, web search, stock prices, and more.
 
 User info:
 - GitHub username: {github_username}
-{chr(10) + '## Long-term memory about this user' + chr(10) + memory_content + chr(10) if memory_content else ''}
+{chr(10) + '## Long-term memory about this user' + chr(10) + memory_content + chr(10) if memory_content else ''}{skills_block}
 Rules:
 - Respond ONLY to the user's latest message. Do not continue or assume tasks from previous messages.
 - Only use tools when the current message explicitly requires them. A greeting like "hi" never needs tools.
