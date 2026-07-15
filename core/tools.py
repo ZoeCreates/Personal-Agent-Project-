@@ -1,5 +1,9 @@
 import math
+from pathlib import Path
+
 from ddgs import DDGS
+
+from core.security.workspace_policy import READ, WRITE, get_workspace_policy
 
 # 工具注册表
 TOOLS = []
@@ -9,6 +13,22 @@ def register_tool(func):
     """装饰器：注册工具"""
     TOOL_FUNCTIONS[func.__name__] = func
     return func
+
+
+def _clamp(value: int, minimum: int, maximum: int) -> int:
+    return max(minimum, min(value, maximum))
+
+
+def _path_display(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
+def _policy_denial_message(operation: str, reason: str) -> str:
+    return f"文件{operation}被拒绝: {reason}"
+
 
 # ---- 工具定义 ----
 
@@ -137,9 +157,174 @@ def get_notion_todos(status: str = "not_started") -> str:
 
     return "\n".join(lines)
 
+
+@register_tool
+def list_files(path: str = ".", recursive: bool = False, max_entries: int = 100) -> str:
+    """List files under an allowed workspace/project path."""
+    policy = get_workspace_policy()
+    decision = policy.check_path(path, READ)
+    if decision.denied:
+        return _policy_denial_message("列表读取", decision.reason)
+
+    target = decision.path
+    if target is None or not target.exists():
+        return f"路径不存在: {path}"
+
+    if target.is_file():
+        return _path_display(target, policy.workspace_root)
+
+    max_entries = _clamp(int(max_entries), 1, 500)
+    iterator = target.rglob("*") if recursive else target.iterdir()
+    entries = []
+    skipped = 0
+
+    for child in sorted(iterator, key=lambda item: str(item)):
+        child_decision = policy.check_path(child, READ)
+        if child_decision.denied:
+            skipped += 1
+            continue
+        suffix = "/" if child.is_dir() else ""
+        entries.append(f"{_path_display(child, target)}{suffix}")
+        if len(entries) >= max_entries:
+            break
+
+    if not entries:
+        return "没有可读取的文件"
+
+    output = "\n".join(entries)
+    notes = []
+    if len(entries) >= max_entries:
+        notes.append(f"已限制为前 {max_entries} 项")
+    if skipped:
+        notes.append(f"跳过 {skipped} 个受保护路径")
+    if notes:
+        output += "\n\n" + "；".join(notes)
+    return output
+
+
+@register_tool
+def read_file(path: str, max_chars: int = 12000) -> str:
+    """Read a UTF-8 text file after workspace policy validation."""
+    policy = get_workspace_policy()
+    decision = policy.check_path(path, READ)
+    if decision.denied:
+        return _policy_denial_message("读取", decision.reason)
+
+    target = decision.path
+    if target is None or not target.exists():
+        return f"文件不存在: {path}"
+    if target.is_dir():
+        return f"路径是文件夹，不是文件: {path}"
+
+    max_chars = _clamp(int(max_chars), 1_000, 50_000)
+    try:
+        content = target.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return "读取失败: 只支持 UTF-8 文本文件"
+    except OSError as exc:
+        return f"读取失败: {exc}"
+
+    if len(content) <= max_chars:
+        return content
+    return content[:max_chars] + f"\n\n[内容已截断，仅显示前 {max_chars} 字符]"
+
+
+@register_tool
+def write_file(path: str, content: str, overwrite: bool = False) -> str:
+    """Write a UTF-8 text file after workspace policy validation."""
+    policy = get_workspace_policy()
+    decision = policy.check_path(path, WRITE)
+    if decision.denied:
+        return _policy_denial_message("写入", decision.reason)
+
+    target = decision.path
+    if target is None:
+        return "写入失败: 无法解析目标路径"
+    if target.exists() and not overwrite:
+        return "文件已存在，设置 overwrite=true 才会覆盖"
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        return f"写入失败: {exc}"
+
+    return f"已写入: {_path_display(target, policy.workspace_root)} ({len(content)} 字符)"
+
 # ---- OpenAI 格式的工具描述 ----
 
 TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "列出允许访问的 workspace/project 路径下的文件。所有路径都会经过 workspace policy 检查。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "要列出的路径，默认为 workspace 根目录下的当前路径"
+                    },
+                    "recursive": {
+                        "type": "boolean",
+                        "description": "是否递归列出子目录"
+                    },
+                    "max_entries": {
+                        "type": "integer",
+                        "description": "最多返回多少项，范围 1-500"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "读取允许访问的 UTF-8 文本文件。所有路径都会经过 workspace policy 检查。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "要读取的文件路径"
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "最多返回多少字符，范围 1000-50000"
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "写入允许访问的 UTF-8 文本文件。默认不覆盖已有文件，所有路径都会经过 workspace policy 检查。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "要写入的文件路径"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "要写入的文本内容"
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": "文件已存在时是否允许覆盖"
+                    }
+                },
+                "required": ["path", "content"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
