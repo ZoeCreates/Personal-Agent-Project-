@@ -95,6 +95,20 @@ class WorkspacePolicy:
         self.ensure_workspace()
         return str(self.mcp_filesystem_root())
 
+    def restricted_paths(self) -> tuple[str, ...]:
+        home = Path.home().resolve(strict=False)
+        return (
+            str((self.project_root / ".env").resolve(strict=False)),
+            str(home / ".ssh"),
+            str(home / ".my-agent" / "config"),
+            str(home / ".my-agent" / "config.json"),
+            "any path containing .git",
+            "any path containing .ssh",
+            "any .env file",
+            "any *.pem file",
+            "any *.key file",
+        )
+
     def mcp_filesystem_root(self) -> Path:
         roots = (
             (self.workspace_root,)

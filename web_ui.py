@@ -17,6 +17,7 @@ from core.message_bus import MessageBus
 from core.channels.web import WebChannel
 from core.llm import has_llm_credentials
 from core.mcp_setup import create_mcp_client
+from core.security.workspace_policy import get_workspace_policy
 
 load_dotenv()
 init_db()
@@ -145,6 +146,21 @@ def api_tools():
     return jsonify({"builtin": builtin, "mcp": mcp_tools})
 
 
+@app.route("/api/workspace-policy")
+def api_workspace_policy():
+    policy = get_workspace_policy()
+    return jsonify(
+        {
+            "workspace_root": str(policy.workspace_root),
+            "read_roots": [str(root) for root in policy.read_roots],
+            "write_roots": [str(root) for root in policy.write_roots],
+            "restricted_paths": list(policy.restricted_paths()),
+            "mcp_filesystem_root": str(policy.mcp_filesystem_root()),
+            "restrict_mcp_to_workspace": policy.restrict_mcp_to_workspace,
+        }
+    )
+
+
 @app.route("/api/settings", methods=["POST"])
 def save_settings():
     data = request.json
@@ -180,4 +196,5 @@ def save_settings():
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5001"))
-    app.run(debug=True, port=port)
+    debug = os.getenv("FLASK_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+    app.run(debug=debug, port=port)

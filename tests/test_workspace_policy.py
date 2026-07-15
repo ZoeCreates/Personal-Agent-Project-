@@ -45,6 +45,13 @@ class WorkspacePolicyTest(unittest.TestCase):
         self.assertTrue(decision.denied)
         self.assertIn("sensitive", decision.reason)
 
+    def test_exposes_restricted_path_descriptions(self):
+        restricted_paths = self.policy.restricted_paths()
+
+        self.assertIn(str((self.project_root / ".env").resolve(strict=False)), restricted_paths)
+        self.assertIn("any path containing .git", restricted_paths)
+        self.assertIn("any *.key file", restricted_paths)
+
     def test_denies_path_traversal_outside_workspace_for_mcp_filesystem(self):
         decision = self.policy.check_mcp_tool(
             "filesystem__read_file",

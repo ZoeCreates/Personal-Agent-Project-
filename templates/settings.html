@@ -40,6 +40,36 @@
             </div>
 
             <div class="section">
+                <div class="section-title-row">
+                    <h2>Workspace Permissions</h2>
+                    <span class="status-pill" id="mcp-restriction">Loading</span>
+                </div>
+                <div class="permission-grid">
+                    <div class="permission-item">
+                        <h3>Workspace root</h3>
+                        <code id="workspace-root" class="code-value">Loading...</code>
+                    </div>
+                    <div class="permission-item">
+                        <h3>MCP filesystem root</h3>
+                        <code id="mcp-filesystem-root" class="code-value">Loading...</code>
+                    </div>
+                </div>
+
+                <div class="subsection">
+                    <h3>Read roots</h3>
+                    <ul id="read-roots" class="path-list"></ul>
+                </div>
+                <div class="subsection">
+                    <h3>Write roots</h3>
+                    <ul id="write-roots" class="path-list"></ul>
+                </div>
+                <div class="subsection">
+                    <h3>Restricted paths</h3>
+                    <ul id="restricted-paths" class="path-list"></ul>
+                </div>
+            </div>
+
+            <div class="section">
                 <h2>Conversation</h2>
                 <button class="danger-btn" onclick="clearHistory()">Clear History</button>
                 <p class="hint" id="clear-status"></p>
@@ -66,6 +96,40 @@
                 li.innerText = name;
                 mcpList.appendChild(li);
             });
+        }
+
+        function renderPathList(id, values) {
+            const list = document.getElementById(id);
+            list.innerHTML = "";
+            if (!values || values.length === 0) {
+                const li = document.createElement("li");
+                li.className = "empty-state";
+                li.innerText = "None";
+                list.appendChild(li);
+                return;
+            }
+            values.forEach(value => {
+                const li = document.createElement("li");
+                const code = document.createElement("code");
+                code.innerText = value;
+                li.appendChild(code);
+                list.appendChild(li);
+            });
+        }
+
+        async function loadWorkspacePolicy() {
+            const res = await fetch("/api/workspace-policy");
+            const data = await res.json();
+
+            document.getElementById("workspace-root").innerText = data.workspace_root;
+            document.getElementById("mcp-filesystem-root").innerText = data.mcp_filesystem_root;
+            const restriction = document.getElementById("mcp-restriction");
+            restriction.innerText = data.restrict_mcp_to_workspace ? "MCP restricted" : "MCP expanded";
+            restriction.className = data.restrict_mcp_to_workspace ? "status-pill" : "status-pill warning";
+
+            renderPathList("read-roots", data.read_roots);
+            renderPathList("write-roots", data.write_roots);
+            renderPathList("restricted-paths", data.restricted_paths);
         }
 
         async function saveSettings() {
@@ -95,6 +159,7 @@
         }
 
         loadTools();
+        loadWorkspacePolicy();
     </script>
 </body>
 </html>
