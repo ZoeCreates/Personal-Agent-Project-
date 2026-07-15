@@ -7,6 +7,7 @@ from typing import Iterator
 
 from core.context import AgentContext, RunnerResult, ToolTrace
 from core.llm import AnthropicResponse, LLMClient
+from core.security.tool_permission import get_tool_permission_gate
 from core.tools import TOOL_FUNCTIONS
 from core.tool_audit import log_tool_call
 
@@ -90,22 +91,40 @@ class AgentRunner:
         start = time.perf_counter()
         success = True
         error = ""
+        allowed = True
         try:
-            func = TOOL_FUNCTIONS.get(name)
-            if func:
-                result = func(**args)
-            elif context.mcp and name in context.mcp.tool_map:
-                result = context.mcp.call_tool_sync(name, args)
-            else:
+            permission = get_tool_permission_gate().check(name, args)
+            if permission.denied:
                 success = False
-                result = f"未知工具: {name}"
+                allowed = False
+                error = permission.reason
+                result = f"工具被权限策略拒绝: {permission.reason}"
+            elif permission.requires_approval:
+                success = False
+                allowed = False
+                error = permission.reason
+                result = f"工具需要用户确认后才能执行: {permission.reason}"
+            else:
+                func = TOOL_FUNCTIONS.get(name)
+                if func:
+                    result = func(**args)
+                elif context.mcp and name in context.mcp.tool_map:
+                    result = context.mcp.call_tool_sync(name, args)
+                else:
+                    success = False
+                    result = f"未知工具: {name}"
         except Exception as exc:
             success = False
             error = str(exc)
             result = f"工具执行失败: {exc}"
 
         result = str(result)
-        allowed = not result.startswith("工具被 workspace policy 拒绝:")
+        if result.startswith("工具被 workspace policy 拒绝:"):
+            allowed = False
+        if result.startswith("工具被权限策略拒绝:"):
+            allowed = False
+        if result.startswith("工具需要用户确认后才能执行:"):
+            allowed = False
         if not allowed:
             success = False
             error = result
