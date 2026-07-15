@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+import json
+import os
+from typing import Iterator
+
+from core.context import AgentContext, RunnerResult, ToolTrace
+from core.llm import AnthropicResponse, LLMClient
+from core.tools import TOOL_FUNCTIONS
+
+
+class AgentRunner:
+    """Model-facing loop: call the LLM, execute tools, and return the final answer."""
+
+    def __init__(self, llm: LLMClient | None = None, max_tool_steps: int | None = None):
+        self.llm = llm or LLMClient()
+        self.max_tool_steps = max_tool_steps or int(os.getenv("MAX_TOOL_STEPS", "12"))
+
+    def run(self, context: AgentContext) -> RunnerResult:
+        messages = context.messages
+        traces: list[ToolTrace] = []
+
+        response = self.llm.chat(messages, tools=context.tools)
+        tool_steps = 0
+
+        while response.tool_calls:
+            tool_steps += 1
+            if tool_steps > self.max_tool_steps:
+                return RunnerResult(
+                    content="工具调用次数过多，我先停下来避免无限循环。",
+                    tool_traces=traces,
+                )
+
+            messages.append({"role": "assistant", "content": list(response)})
+
+            for tool_call in response.tool_calls:
+                result, trace = self._execute_tool(context, tool_call)
+                traces.append(trace)
+                messages.append(self._tool_result_message(tool_call.id, result))
+
+            response = self.llm.chat(messages, tools=context.tools)
+
+        return RunnerResult(content=response.content or "", tool_traces=traces)
+
+    def stream(self, context: AgentContext) -> Iterator[tuple[str, object]]:
+        messages = context.messages
+        tool_steps = 0
+
+        while True:
+            with self.llm.stream_chat(messages, tools=context.tools) as stream:
+                accumulated_text = ""
+                for text in stream.text_stream:
+                    accumulated_text += text
+                    yield ("text", text)
+                final = stream.get_final_message()
+                wrapped = AnthropicResponse(final)
+
+            if not wrapped.tool_calls:
+                yield ("final", accumulated_text)
+                yield ("done", None)
+                break
+
+            tool_steps += 1
+            if tool_steps > self.max_tool_steps:
+                message = "工具调用次数过多，我先停下来避免无限循环。"
+                yield ("text", message)
+                yield ("final", message)
+                yield ("done", None)
+                break
+
+            tool_names = [tc.function.name for tc in wrapped.tool_calls]
+            yield ("tool", f"Using: {', '.join(tool_names)}")
+
+            messages.append({"role": "assistant", "content": list(wrapped)})
+            for tool_call in wrapped.tool_calls:
+                result, _trace = self._execute_tool(context, tool_call)
+                messages.append(self._tool_result_message(tool_call.id, result))
+
+    def _execute_tool(self, context: AgentContext, tool_call) -> tuple[str, ToolTrace]:
+        name = tool_call.function.name
+        args = self._parse_args(tool_call.function.arguments)
+
+        if name == "set_reminder":
+            args["user_id"] = context.user_id
+
+        print(f"  [工具调用] {name}({args})")
+
+        success = True
+        try:
+            func = TOOL_FUNCTIONS.get(name)
+            if func:
+                result = func(**args)
+            elif context.mcp and name in context.mcp.tool_map:
+                result = context.mcp.call_tool_sync(name, args)
+            else:
+                success = False
+                result = f"未知工具: {name}"
+        except Exception as exc:
+            success = False
+            result = f"工具执行失败: {exc}"
+
+        result = str(result)
+        print(f"  [工具结果] {result}")
+        return result, ToolTrace(name=name, args=args, result=result, success=success)
+
+    @staticmethod
+    def _parse_args(raw) -> dict:
+        if isinstance(raw, dict):
+            return dict(raw)
+        if not raw:
+            return {}
+        parsed = json.loads(raw)
+        return parsed or {}
+
+    @staticmethod
+    def _tool_result_message(tool_call_id: str, result: str) -> dict:
+        return {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_call_id,
+                    "content": result,
+                }
+            ],
+        }
