@@ -3,5 +3,7 @@ venv/
 __pycache__/
 *.pyc
 *.jsonl
+*.log
 .DS_Store
 agent_data/
+workspace/

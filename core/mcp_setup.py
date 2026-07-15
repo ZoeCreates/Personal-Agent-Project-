@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from core.mcp_client import MCPClient
+from core.security.workspace_policy import get_workspace_policy
 
 
 async def create_mcp_client() -> MCPClient:
-    mcp = MCPClient()
-    desktop_dir = Path.home() / "Desktop"
-    filesystem_root = str(desktop_dir if desktop_dir.exists() else Path.cwd())
+    policy = get_workspace_policy()
+    mcp = MCPClient(policy=policy)
+    filesystem_root = policy.filesystem_root()
     await mcp.connect(
         server_name="filesystem",
         command="npx",
