@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Iterator
 
 from core.context import AgentContext, RunnerResult, ToolTrace
 from core.llm import AnthropicResponse, LLMClient
 from core.tools import TOOL_FUNCTIONS
+from core.tool_audit import log_tool_call
 
 
 class AgentRunner:
@@ -85,7 +87,9 @@ class AgentRunner:
 
         print(f"  [工具调用] {name}({args})")
 
+        start = time.perf_counter()
         success = True
+        error = ""
         try:
             func = TOOL_FUNCTIONS.get(name)
             if func:
@@ -97,9 +101,25 @@ class AgentRunner:
                 result = f"未知工具: {name}"
         except Exception as exc:
             success = False
+            error = str(exc)
             result = f"工具执行失败: {exc}"
 
         result = str(result)
+        allowed = not result.startswith("工具被 workspace policy 拒绝:")
+        if not allowed:
+            success = False
+            error = result
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        log_tool_call(
+            user_id=context.user_id,
+            tool_name=name,
+            args=args,
+            allowed=allowed,
+            success=success,
+            result=result,
+            duration_ms=duration_ms,
+            error=error,
+        )
         print(f"  [工具结果] {result}")
         return result, ToolTrace(name=name, args=args, result=result, success=success)
 

@@ -36,6 +36,8 @@ WRITE_TOOL_HINTS = (
     "mkdir",
 )
 
+TRUTHY = {"1", "true", "yes", "on"}
+
 
 @dataclass(frozen=True)
 class PolicyDecision:
@@ -61,16 +63,28 @@ class WorkspacePolicy:
         project_root: Path | str | None = None,
         read_roots: Iterable[Path | str] | None = None,
         write_roots: Iterable[Path | str] | None = None,
+        restrict_mcp_to_workspace: bool | None = None,
     ):
         self.project_root = self._resolve_dir(project_root or Path.cwd())
         self.workspace_root = self._resolve_dir(
-            workspace_root or os.getenv("MY_AGENT_WORKSPACE_ROOT") or self.project_root / "workspace"
+            workspace_root
+            or os.getenv("MY_AGENT_WORKSPACE_ROOT")
+            or self.project_root / "workspace"
         )
-        self.read_roots = tuple(
-            self._resolve_dir(p) for p in (read_roots or (self.project_root, self.workspace_root))
+        self.read_roots = self._dedupe_roots(
+            read_roots
+            if read_roots is not None
+            else self._env_roots("MY_AGENT_READ_ROOTS", (self.project_root, self.workspace_root))
         )
-        self.write_roots = tuple(
-            self._resolve_dir(p) for p in (write_roots or (self.workspace_root,))
+        self.write_roots = self._dedupe_roots(
+            write_roots
+            if write_roots is not None
+            else self._env_roots("MY_AGENT_WRITE_ROOTS", (self.workspace_root,))
+        )
+        self.restrict_mcp_to_workspace = (
+            restrict_mcp_to_workspace
+            if restrict_mcp_to_workspace is not None
+            else self._env_bool("MY_AGENT_RESTRICT_MCP_TO_WORKSPACE", True)
         )
 
     def ensure_workspace(self) -> Path:
@@ -78,7 +92,16 @@ class WorkspacePolicy:
         return self.workspace_root
 
     def filesystem_root(self) -> str:
-        return str(self.ensure_workspace())
+        self.ensure_workspace()
+        return str(self.mcp_filesystem_root())
+
+    def mcp_filesystem_root(self) -> Path:
+        roots = (
+            (self.workspace_root,)
+            if self.restrict_mcp_to_workspace
+            else self.read_roots + self.write_roots
+        )
+        return self.common_root(roots)
 
     def check_path(
         self,
@@ -108,15 +131,22 @@ class WorkspacePolicy:
         if not tool_name.startswith("filesystem__"):
             return PolicyDecision("allow")
 
+        operation = WRITE if self._is_write_tool(tool_name) else READ
+        allowed_roots = (
+            (self.workspace_root,)
+            if self.restrict_mcp_to_workspace
+            else (self.write_roots if operation == WRITE else self.read_roots)
+        )
         for raw_path in self._iter_path_values(args):
-            resolved = self.resolve_path(raw_path, base_dir=self.workspace_root)
+            resolved = self.resolve_path(raw_path, base_dir=self.mcp_filesystem_root())
             sensitive_reason = self._sensitive_reason(resolved)
             if sensitive_reason:
                 return PolicyDecision(DENY, sensitive_reason, resolved)
-            if not self._is_under_any(resolved, (self.workspace_root,)):
+            if not self._is_under_any(resolved, allowed_roots):
+                root_text = ", ".join(str(r) for r in allowed_roots)
                 return PolicyDecision(
                     DENY,
-                    f"MCP filesystem path is outside workspace root: {self.workspace_root}",
+                    f"MCP filesystem {operation} path is outside allowed roots: {root_text}",
                     resolved,
                 )
         return PolicyDecision("allow")
@@ -130,6 +160,39 @@ class WorkspacePolicy:
     @staticmethod
     def _resolve_dir(path: str | Path) -> Path:
         return Path(path).expanduser().resolve(strict=False)
+
+    @classmethod
+    def _dedupe_roots(cls, roots: Iterable[Path | str]) -> tuple[Path, ...]:
+        deduped = []
+        seen = set()
+        for root in roots:
+            resolved = cls._resolve_dir(root)
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            deduped.append(resolved)
+        return tuple(deduped)
+
+    @staticmethod
+    def _env_roots(name: str, default: Iterable[Path | str]) -> tuple[Path | str, ...]:
+        raw = os.getenv(name)
+        if not raw:
+            return tuple(default)
+        return tuple(part.strip() for part in raw.split(os.pathsep) if part.strip())
+
+    @staticmethod
+    def _env_bool(name: str, default: bool) -> bool:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        return raw.strip().lower() in TRUTHY
+
+    @staticmethod
+    def common_root(roots: Iterable[Path]) -> Path:
+        root_list = [Path(root).resolve(strict=False) for root in roots]
+        if not root_list:
+            raise ValueError("At least one root is required")
+        return Path(os.path.commonpath([str(root) for root in root_list]))
 
     @staticmethod
     def _is_write_tool(tool_name: str) -> bool:
