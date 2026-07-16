@@ -53,6 +53,32 @@ body {
     background: #f5f5f5;
 }
 
+.approval-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 20px;
+    background: #fff8e8;
+    border-bottom: 1px solid #ead9a7;
+    color: #4f3f13;
+    font-size: 13px;
+}
+
+.approval-banner.hidden {
+    display: none;
+}
+
+.approval-banner a {
+    color: #1a1a1a;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.approval-banner a:hover {
+    text-decoration: underline;
+}
+
 .messages {
     flex: 1;
     overflow-y: auto;
@@ -212,6 +238,20 @@ body {
     cursor: pointer;
 }
 
+.secondary-btn {
+    padding: 6px 10px;
+    background: white;
+    color: #444;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.secondary-btn:hover {
+    background: #f5f5f5;
+}
+
 .hint {
     font-size: 12px;
     color: #999;
@@ -289,6 +329,77 @@ body {
     background: #fff8e8;
     border-color: #ead9a7;
     color: #735b16;
+}
+
+.approval-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.approval-card {
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    padding: 12px;
+    background: #fafafa;
+}
+
+.approval-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.approval-header strong {
+    min-width: 0;
+    font-size: 13px;
+    color: #1a1a1a;
+    overflow-wrap: anywhere;
+}
+
+.approval-reason {
+    font-size: 12px;
+    color: #555;
+    line-height: 1.4;
+    margin-bottom: 8px;
+    overflow-wrap: anywhere;
+}
+
+.approval-args {
+    max-height: 160px;
+    overflow: auto;
+    padding: 8px;
+    background: white;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    color: #262626;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin-bottom: 10px;
+}
+
+.approval-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.approval-actions button {
+    padding: 7px 12px;
+    background: #1a1a1a;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.approval-actions .danger-btn {
+    background: white;
 }
 
 .danger-btn {

@@ -53,14 +53,20 @@ class ToolPermissionGate:
     def __init__(self, workspace_policy: WorkspacePolicy | None = None):
         self.workspace_policy = workspace_policy or get_workspace_policy()
 
-    def check(self, tool_name: str, args: dict[str, Any]) -> ToolPermissionDecision:
+    def check(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        *,
+        approved: bool = False,
+    ) -> ToolPermissionDecision:
         args = args or {}
 
         if _env_bool("MY_AGENT_AUTO_APPROVE_TOOLS", False):
             return ToolPermissionDecision(ALLOW, "auto approval enabled")
 
         if tool_name == "write_file":
-            return self._check_write_file(args)
+            return self._check_write_file(args, approved=approved)
 
         if tool_name in {"read_file", "list_files"}:
             operation = READ
@@ -75,7 +81,7 @@ class ToolPermissionGate:
             workspace_decision = self.workspace_policy.check_mcp_tool(tool_name, args)
             if workspace_decision.denied:
                 return ToolPermissionDecision(DENY, workspace_decision.reason, "high")
-            if self._requires_approval(tool_name):
+            if self._requires_approval(tool_name) and not approved:
                 return ToolPermissionDecision(
                     REQUIRE_APPROVAL,
                     f"{tool_name} changes filesystem state and needs approval",
@@ -83,7 +89,7 @@ class ToolPermissionGate:
                 )
             return ToolPermissionDecision(ALLOW)
 
-        if self._requires_approval(tool_name):
+        if self._requires_approval(tool_name) and not approved:
             return ToolPermissionDecision(
                 REQUIRE_APPROVAL,
                 f"{tool_name} is a high-risk tool and needs approval",
@@ -92,7 +98,12 @@ class ToolPermissionGate:
 
         return ToolPermissionDecision(ALLOW)
 
-    def _check_write_file(self, args: dict[str, Any]) -> ToolPermissionDecision:
+    def _check_write_file(
+        self,
+        args: dict[str, Any],
+        *,
+        approved: bool = False,
+    ) -> ToolPermissionDecision:
         path = args.get("path")
         if not path:
             return ToolPermissionDecision(DENY, "write_file requires path", "high")
@@ -103,7 +114,7 @@ class ToolPermissionGate:
 
         target = workspace_decision.path
         overwrite = bool(args.get("overwrite"))
-        if overwrite or (target and target.exists()):
+        if (overwrite or (target and target.exists())) and not approved:
             display = _display_path(target)
             return ToolPermissionDecision(
                 REQUIRE_APPROVAL,

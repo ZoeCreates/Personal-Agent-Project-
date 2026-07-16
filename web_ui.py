@@ -17,6 +17,8 @@ from core.message_bus import MessageBus
 from core.channels.web import WebChannel
 from core.llm import has_llm_credentials
 from core.mcp_setup import create_mcp_client
+from core.runner import AgentRunner
+from core.security.approval_store import PENDING, get_approval_store
 from core.security.workspace_policy import get_workspace_policy
 
 load_dotenv()
@@ -159,6 +161,52 @@ def api_workspace_policy():
             "restrict_mcp_to_workspace": policy.restrict_mcp_to_workspace,
         }
     )
+
+
+@app.route("/api/approvals")
+def api_approvals():
+    status = request.args.get("status") or None
+    return jsonify(
+        {
+            "approvals": get_approval_store().list(
+                user_id="web_user",
+                status=status,
+            )
+        }
+    )
+
+
+@app.route("/api/approvals/<approval_id>/deny", methods=["POST"])
+def deny_approval(approval_id):
+    item = get_approval_store().deny(approval_id)
+    if item is None:
+        return jsonify({"error": "approval not found"}), 404
+    return jsonify({"approval": item.to_dict()})
+
+
+@app.route("/api/approvals/<approval_id>/approve", methods=["POST"])
+def approve_approval(approval_id):
+    store = get_approval_store()
+    item = store.get(approval_id)
+    if item is None:
+        return jsonify({"error": "approval not found"}), 404
+    if item.user_id != "web_user":
+        return jsonify({"error": "approval does not belong to this user"}), 403
+    if item.status != PENDING:
+        return jsonify({"approval": item.to_dict()}), 409
+
+    result, trace = AgentRunner.execute_tool_after_approval(
+        user_id=item.user_id,
+        tool_name=item.tool_name,
+        args=item.args,
+        mcp=mcp,
+    )
+    updated = store.mark_executed(
+        approval_id,
+        result=result,
+        error="" if trace.success else result,
+    )
+    return jsonify({"approval": updated.to_dict() if updated else item.to_dict()})
 
 
 @app.route("/api/settings", methods=["POST"])

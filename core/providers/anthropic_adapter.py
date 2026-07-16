@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from anthropic import Anthropic
 
+from core.tool_intent import preferred_tool_for_latest_user_message
+
 
 class AnthropicFunction:
     def __init__(self, name, arguments):
@@ -72,6 +74,12 @@ class AnthropicAdapter:
         }
         if anthropic_tools:
             kwargs["tools"] = anthropic_tools
+            preferred_tool = preferred_tool_for_latest_user_message(
+                filtered,
+                {tool["name"] for tool in anthropic_tools},
+            )
+            if preferred_tool:
+                kwargs["tool_choice"] = {"type": "tool", "name": preferred_tool}
         return kwargs
 
     def chat_with_model(self, model_name: str, kwargs: dict):

@@ -26,6 +26,11 @@
         </div>
       </div>
 
+      <div class="approval-banner hidden" id="approval-banner">
+        <span id="approval-banner-text"></span>
+        <a href="/settings">Review</a>
+      </div>
+
       <div class="messages" id="messages"></div>
 
       <div class="input-area">
@@ -42,6 +47,8 @@
     <script>
       const input = document.getElementById("input");
       const messages = document.getElementById("messages");
+      const approvalBanner = document.getElementById("approval-banner");
+      const approvalBannerText = document.getElementById("approval-banner-text");
 
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") sendMessage();
@@ -106,6 +113,22 @@
           addMessage("agent", "⏰ Reminder: " + msg);
         }
       }, 30000);
+
+      async function refreshApprovalsBanner() {
+        const res = await fetch("/api/approvals?status=pending");
+        const data = await res.json();
+        const count = data.approvals ? data.approvals.length : 0;
+        if (count > 0) {
+          approvalBanner.classList.remove("hidden");
+          approvalBannerText.innerText = `${count} tool approval${count === 1 ? "" : "s"} waiting`;
+        } else {
+          approvalBanner.classList.add("hidden");
+          approvalBannerText.innerText = "";
+        }
+      }
+
+      setInterval(refreshApprovalsBanner, 5000);
+      refreshApprovalsBanner();
 
       async function clearHistory() {
         await fetch("/clear", { method: "POST" });

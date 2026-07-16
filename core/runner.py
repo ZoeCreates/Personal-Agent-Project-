@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import os
 import time
+from types import SimpleNamespace
 from typing import Iterator
 
 from core.context import AgentContext, RunnerResult, ToolTrace
 from core.llm import AnthropicResponse, LLMClient
+from core.security.approval_store import get_approval_store
 from core.security.tool_permission import get_tool_permission_gate
 from core.tools import TOOL_FUNCTIONS
 from core.tool_audit import log_tool_call
@@ -40,6 +42,8 @@ class AgentRunner:
                 result, trace = self._execute_tool(context, tool_call)
                 traces.append(trace)
                 messages.append(self._tool_result_message(tool_call.id, result))
+                if self._is_approval_waiting_result(result):
+                    return RunnerResult(content=result, tool_traces=traces)
 
             response = self.llm.chat(messages, tools=context.tools)
 
@@ -78,11 +82,46 @@ class AgentRunner:
             for tool_call in wrapped.tool_calls:
                 result, _trace = self._execute_tool(context, tool_call)
                 messages.append(self._tool_result_message(tool_call.id, result))
+                if self._is_approval_waiting_result(result):
+                    yield ("text", result)
+                    yield ("final", result)
+                    yield ("done", None)
+                    return
 
     def _execute_tool(self, context: AgentContext, tool_call) -> tuple[str, ToolTrace]:
         name = tool_call.function.name
         args = self._parse_args(tool_call.function.arguments)
 
+        return self._execute_tool_by_name(
+            context=context,
+            name=name,
+            args=args,
+        )
+
+    @staticmethod
+    def execute_tool_after_approval(
+        *,
+        user_id: str,
+        tool_name: str,
+        args: dict,
+        mcp=None,
+    ) -> tuple[str, ToolTrace]:
+        context = SimpleNamespace(user_id=user_id, mcp=mcp)
+        return AgentRunner._execute_tool_by_name(
+            context=context,
+            name=tool_name,
+            args=dict(args or {}),
+            approved=True,
+        )
+
+    @staticmethod
+    def _execute_tool_by_name(
+        *,
+        context,
+        name: str,
+        args: dict,
+        approved: bool = False,
+    ) -> tuple[str, ToolTrace]:
         if name == "set_reminder":
             args["user_id"] = context.user_id
 
@@ -93,17 +132,27 @@ class AgentRunner:
         error = ""
         allowed = True
         try:
-            permission = get_tool_permission_gate().check(name, args)
+            permission = get_tool_permission_gate().check(name, args, approved=approved)
             if permission.denied:
                 success = False
                 allowed = False
                 error = permission.reason
                 result = f"工具被权限策略拒绝: {permission.reason}"
             elif permission.requires_approval:
+                approval = get_approval_store().create(
+                    user_id=context.user_id,
+                    tool_name=name,
+                    args=args,
+                    reason=permission.reason,
+                    risk=permission.risk,
+                )
                 success = False
                 allowed = False
                 error = permission.reason
-                result = f"工具需要用户确认后才能执行: {permission.reason}"
+                result = (
+                    "工具需要用户确认后才能执行: "
+                    f"{permission.reason}\nApproval ID: {approval.id}"
+                )
             else:
                 func = TOOL_FUNCTIONS.get(name)
                 if func:
@@ -163,3 +212,7 @@ class AgentRunner:
                 }
             ],
         }
+
+    @staticmethod
+    def _is_approval_waiting_result(result: str) -> bool:
+        return str(result).startswith("工具需要用户确认后才能执行:")

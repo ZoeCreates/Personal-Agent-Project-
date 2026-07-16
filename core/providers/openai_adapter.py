@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from core.tool_intent import preferred_tool_for_latest_user_message
+
 try:
     from openai import OpenAI
 except Exception:
@@ -95,6 +97,16 @@ class OpenAIStreamContext:
                 self._adapter is not None and self._adapter._is_tool_use_failed(e)
             ) or OpenAIAdapter._is_tool_use_failed(e)
             if is_tool_fail and kwargs.get("tools") and not text_parts:
+                if isinstance(kwargs.get("tool_choice"), dict):
+                    content = [
+                        _TextBlock(
+                            "The model failed to call the required tool. "
+                            "Please retry or switch to a tool-capable model."
+                        )
+                    ]
+                    self._final = OpenAIResponseAdapter(content_blocks=content)
+                    yield content[0].text
+                    return
                 print(
                     f"  [LLM] tool_use_failed（流式），禁用 tools 重试一次"
                 )
@@ -252,7 +264,17 @@ class OpenAIAdapter:
         tools = self._tools_to_openai(anthropic_kwargs.get("tools"))
         if tools:
             openai_kwargs["tools"] = tools
-            openai_kwargs["tool_choice"] = "auto"
+            preferred_tool = preferred_tool_for_latest_user_message(
+                messages,
+                {tool["function"]["name"] for tool in tools},
+            )
+            if preferred_tool:
+                openai_kwargs["tool_choice"] = {
+                    "type": "function",
+                    "function": {"name": preferred_tool},
+                }
+            else:
+                openai_kwargs["tool_choice"] = "auto"
         return openai_kwargs
 
     @staticmethod
@@ -270,6 +292,11 @@ class OpenAIAdapter:
         except Exception as e:
             if not (self._is_tool_use_failed(e) and openai_kwargs.get("tools")):
                 raise
+            if isinstance(openai_kwargs.get("tool_choice"), dict):
+                raise RuntimeError(
+                    "The model failed to call the required tool. "
+                    "Please retry or switch to a tool-capable model."
+                ) from e
             print(
                 f"  [LLM] {self.label} tool_use_failed，禁用 tools 重试一次"
             )

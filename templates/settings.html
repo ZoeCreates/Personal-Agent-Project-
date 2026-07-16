@@ -70,6 +70,21 @@
             </div>
 
             <div class="section">
+                <div class="section-title-row">
+                    <h2>Tool Approvals</h2>
+                    <button class="secondary-btn" onclick="loadApprovals()">Refresh</button>
+                </div>
+                <div class="subsection">
+                    <h3>Pending</h3>
+                    <div id="approval-list" class="approval-list"></div>
+                </div>
+                <div class="subsection">
+                    <h3>Recent decisions</h3>
+                    <div id="approval-history" class="approval-list"></div>
+                </div>
+            </div>
+
+            <div class="section">
                 <h2>Conversation</h2>
                 <button class="danger-btn" onclick="clearHistory()">Clear History</button>
                 <p class="hint" id="clear-status"></p>
@@ -132,6 +147,106 @@
             renderPathList("restricted-paths", data.restricted_paths);
         }
 
+        function renderApprovals(approvals) {
+            const container = document.getElementById("approval-list");
+            container.innerHTML = "";
+            if (!approvals || approvals.length === 0) {
+                const empty = document.createElement("p");
+                empty.className = "hint";
+                empty.innerText = "No pending tool approvals.";
+                container.appendChild(empty);
+                return;
+            }
+
+            approvals.forEach(item => {
+                const card = document.createElement("div");
+                card.className = "approval-card";
+
+                const header = document.createElement("div");
+                header.className = "approval-header";
+                const title = document.createElement("strong");
+                title.innerText = item.tool_name;
+                const risk = document.createElement("span");
+                risk.className = "status-pill warning";
+                risk.innerText = item.risk || item.status;
+                header.appendChild(title);
+                header.appendChild(risk);
+
+                const reason = document.createElement("p");
+                reason.className = "approval-reason";
+                reason.innerText = item.reason;
+
+                const args = document.createElement("pre");
+                args.className = "approval-args";
+                args.innerText = JSON.stringify(item.args, null, 2);
+
+                const actions = document.createElement("div");
+                actions.className = "approval-actions";
+                const allow = document.createElement("button");
+                allow.innerText = "Allow";
+                allow.onclick = () => decideApproval(item.id, "approve");
+                const deny = document.createElement("button");
+                deny.className = "danger-btn";
+                deny.innerText = "Deny";
+                deny.onclick = () => decideApproval(item.id, "deny");
+                actions.appendChild(allow);
+                actions.appendChild(deny);
+
+                card.appendChild(header);
+                card.appendChild(reason);
+                card.appendChild(args);
+                card.appendChild(actions);
+                container.appendChild(card);
+            });
+        }
+
+        function renderApprovalHistory(approvals) {
+            const container = document.getElementById("approval-history");
+            container.innerHTML = "";
+            if (!approvals || approvals.length === 0) {
+                const empty = document.createElement("p");
+                empty.className = "hint";
+                empty.innerText = "No recent approval decisions.";
+                container.appendChild(empty);
+                return;
+            }
+
+            approvals.slice(-5).reverse().forEach(item => {
+                const card = document.createElement("div");
+                card.className = "approval-card";
+                const header = document.createElement("div");
+                header.className = "approval-header";
+                const title = document.createElement("strong");
+                title.innerText = item.tool_name;
+                const status = document.createElement("span");
+                status.className = item.status === "executed" ? "status-pill" : "status-pill warning";
+                status.innerText = item.status;
+                header.appendChild(title);
+                header.appendChild(status);
+
+                const reason = document.createElement("p");
+                reason.className = "approval-reason";
+                reason.innerText = item.error || item.result || item.reason;
+
+                card.appendChild(header);
+                card.appendChild(reason);
+                container.appendChild(card);
+            });
+        }
+
+        async function loadApprovals() {
+            const res = await fetch("/api/approvals");
+            const data = await res.json();
+            const approvals = data.approvals || [];
+            renderApprovals(approvals.filter(item => item.status === "pending"));
+            renderApprovalHistory(approvals.filter(item => item.status !== "pending"));
+        }
+
+        async function decideApproval(id, action) {
+            await fetch(`/api/approvals/${id}/${action}`, {method: "POST"});
+            loadApprovals();
+        }
+
         async function saveSettings() {
             const username = document.getElementById("github-username").value.trim();
             if (!username) return;
@@ -160,6 +275,7 @@
 
         loadTools();
         loadWorkspacePolicy();
+        loadApprovals();
     </script>
 </body>
 </html>
