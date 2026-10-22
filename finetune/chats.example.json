@@ -1,0 +1,9 @@
+[
+  {
+    "conversation_id": "example-only-replace-with-real-conversations",
+    "messages": [
+      {"speaker": "friend", "text": "今晚要一起吃饭吗？"},
+      {"speaker": "me", "text": "替换成你本人真实写过的回复"}
+    ]
+  }
+]

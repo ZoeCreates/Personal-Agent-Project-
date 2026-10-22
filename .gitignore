@@ -7,3 +7,8 @@ __pycache__/
 .DS_Store
 agent_data/
 workspace/
+.venv-finetune/
+finetune/private/
+finetune/adapters/
+finetune/models/
+finetune/hf-cache/

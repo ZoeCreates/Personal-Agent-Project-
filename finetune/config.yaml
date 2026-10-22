@@ -1,0 +1,23 @@
+# Run through local.py so paths resolve relative to the repository.
+model: mlx-community/Qwen3-4B-Instruct-2507-4bit
+data: finetune/private/prepared
+adapter_path: finetune/adapters/zoe
+train: true
+fine_tune_type: lora
+mask_prompt: true
+batch_size: 1
+grad_accumulation_steps: 4
+max_seq_length: 1024
+num_layers: 8
+grad_checkpoint: true
+learning_rate: 0.00001
+iters: 100
+val_batches: 5
+steps_per_report: 5
+steps_per_eval: 25
+save_every: 25
+seed: 42
+lora_parameters:
+  rank: 8
+  dropout: 0.0
+  scale: 16.0
