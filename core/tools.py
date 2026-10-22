@@ -110,7 +110,9 @@ def get_notion_todos(status: str = "not_started") -> str:
     from datetime import date
 
     token = os.getenv("NOTION_TOKEN")
-    database_id = "3edf3271-4d3e-839c-a3db-8150e4e472c3"
+    database_id = os.getenv("NOTION_DATABASE_ID")
+    if not token or not database_id:
+        return "未配置 Notion：请在 .env 中设置 NOTION_TOKEN 和 NOTION_DATABASE_ID"
     headers = {
         "Authorization": f"Bearer {token}",
         "Notion-Version": "2022-06-28",
