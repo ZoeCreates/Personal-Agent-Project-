@@ -1,14 +1,38 @@
-venv/
+# ---- 密钥 ----
 .env
+.env.*
+!.env.example
+
+# ---- Python ----
 __pycache__/
-*.pyc
-*.jsonl
+*.py[cod]
+venv/
+.venv/
+.venv-finetune/
+.pytest_cache/
+*.egg-info/
+
+# ---- 运行时数据 ----
 *.log
-.DS_Store
+*.jsonl
+*.db
+*.sqlite3
 agent_data/
 workspace/
-.venv-finetune/
+output/
+
+# ---- 微调：私人数据、模型与权重 ----
 finetune/private/
 finetune/adapters/
 finetune/models/
 finetune/hf-cache/
+
+# ---- 与项目无关的本地文件 ----
+bottalk
+*.png
+!static/**/*.png
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+.idea/
+.vscode/
