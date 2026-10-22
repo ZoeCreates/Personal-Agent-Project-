@@ -19,4 +19,5 @@ ENV PYTHONUNBUFFERED=1 \
     MY_AGENT_MCP_CONNECT_TIMEOUT=30
 
 # Memory, reminders and audit log live in ~/.my-agent; mount a volume there
-CMD ["python", "telegram_bot.py"]
+# APP_MODE=web runs the web UI, otherwise the Telegram bot
+CMD ["sh", "start.sh"]

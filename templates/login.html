@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Agent · Sign in</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="container login-container">
+      <div class="header">
+        <h1>My Agent</h1>
+      </div>
+      <form class="login-form" method="post" action="/login">
+        <input type="hidden" name="next" value="{{ next_url }}" />
+        <label for="password">Password</label>
+        <div class="field-row">
+          <input
+            type="password"
+            id="password"
+            name="password"
+            autocomplete="current-password"
+            autofocus
+            required
+          />
+          <button type="submit">Sign in</button>
+        </div>
+        {% if error %}
+        <p class="login-error">{{ error }}</p>
+        {% endif %}
+        <p class="hint">Ask the owner for the demo password.</p>
+      </form>
+    </div>
+  </body>
+</html>

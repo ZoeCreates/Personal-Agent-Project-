@@ -80,6 +80,7 @@ Everything is configured through `.env`. See [`.env.example`](.env.example) for 
 | `MODEL` | Anthropic model name |
 | `OPENAI_MODEL`, `OPENAI_BASE_URL` | Model and endpoint for OpenAI-compatible APIs |
 | `TELEGRAM_TOKEN` | Telegram bot token |
+| `WEB_PASSWORD` | Password for the web UI; leave empty to keep it open locally |
 | `GITHUB_TOKEN` | Optional; enables the GitHub MCP server |
 | `NOTION_TOKEN`, `NOTION_DATABASE_ID` | Optional; enable the Notion to-do tool |
 | `MY_AGENT_WORKSPACE_ROOT` | Directory the agent can write to; defaults to `./workspace` |
@@ -94,7 +95,12 @@ MY_AGENT_DISABLE_MCP=1 python -m unittest discover tests
 
 ## Deployment
 
-The `Procfile` defines the Telegram bot as a worker process, so it can be deployed as-is to platforms such as Railway or Heroku. Set the environment variables on the platform.
+The `Dockerfile` runs either app through `start.sh`: the Telegram bot by default, or the web UI (served by gunicorn) when `APP_MODE=web`. On Railway, run them as two services from the same repo:
+
+- **Bot service**: no extra variables. Mount a volume at `/root/.my-agent` so memory and reminders survive redeploys.
+- **Web service**: set `APP_MODE=web` and `WEB_PASSWORD`, then generate a public domain. Visitors sign in with the password, and each browser gets its own conversation.
+
+Only one copy of the Telegram bot can poll at a time, so stop the local bot once the deployed one is running.
 
 ## Local fine-tuning (optional)
 

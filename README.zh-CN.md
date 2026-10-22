@@ -80,6 +80,7 @@ python telegram_bot.py  # 需要在 .env 中设置 TELEGRAM_TOKEN
 | `MODEL` | Anthropic 模型名 |
 | `OPENAI_MODEL`, `OPENAI_BASE_URL` | OpenAI 兼容接口的模型和地址 |
 | `TELEGRAM_TOKEN` | Telegram Bot token |
+| `WEB_PASSWORD` | Web UI 的登录密码；留空则本地不需要登录 |
 | `GITHUB_TOKEN` | 可选，启用 GitHub MCP |
 | `NOTION_TOKEN`, `NOTION_DATABASE_ID` | 可选，启用 Notion 待办工具 |
 | `MY_AGENT_WORKSPACE_ROOT` | Agent 可写入的目录，默认 `./workspace` |
@@ -94,7 +95,12 @@ MY_AGENT_DISABLE_MCP=1 python -m unittest discover tests
 
 ## 部署
 
-仓库里的 `Procfile` 把 Telegram Bot 定义为 worker 进程，可以直接部署到 Railway、Heroku 等平台，在平台上配置好环境变量即可。
+`Dockerfile` 通过 `start.sh` 启动：默认运行 Telegram Bot；设置 `APP_MODE=web` 时运行 Web UI（由 gunicorn 提供服务）。在 Railway 上用同一个仓库建两个服务：
+
+- **Bot 服务**：不需要额外变量。在 `/root/.my-agent` 挂载一个 volume，重新部署后记忆和提醒不会丢失。
+- **Web 服务**：设置 `APP_MODE=web` 和 `WEB_PASSWORD`，然后生成公开域名。访客输入密码登录，每个浏览器有独立的对话。
+
+同一时间只能有一个 Telegram Bot 在轮询，云端运行后请停掉本地的 Bot。
 
 ## 本地微调（可选）
 

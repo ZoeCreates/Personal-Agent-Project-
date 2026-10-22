@@ -23,6 +23,11 @@
             "
             >⚙️ Settings</a
           >
+          {% if auth_enabled %}
+          <form method="post" action="/logout" style="margin: 0">
+            <button type="submit">Log out</button>
+          </form>
+          {% endif %}
         </div>
       </div>
 
